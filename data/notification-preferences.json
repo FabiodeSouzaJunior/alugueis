@@ -1,0 +1,12 @@
+{
+  "payment_overdue": true,
+  "payment_received": true,
+  "tenant_created": false,
+  "tenant_exit": true,
+  "satisfaction_new": false,
+  "satisfaction_low": false,
+  "feedback_new": false,
+  "maintenance_added": true,
+  "obra_stage_completed": false,
+  "consumption_spike": false
+}

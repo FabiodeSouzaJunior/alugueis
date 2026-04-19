@@ -1,0 +1,22 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+# env (não commitar senha do banco)
+.env
+.env.*
+!.env.example
+.env*.local
+# next
+/.next/
+**/.next/
+out
+# misc
+.DS_Store
+*.pem
+.vscode/
+# debug
+*.log
+npm-debug.log*
+# vercel
+.vercel

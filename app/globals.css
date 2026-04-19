@@ -1,0 +1,162 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --radius: 0.5rem;
+    /* Acento página Condomínio — slate-azulado que encaixa com preto/branco */
+    --condo-accent: 217 33% 42%;
+    --condo-accent-muted: 217 25% 97%;
+  }
+
+  /* Preto predominante — branco só em destaque (botões, item ativo, texto) */
+  .dark {
+    --background: 0 0% 2%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 5%;
+    --card-foreground: 0 0% 98%;
+    --primary: 0 0% 100%;
+    --primary-foreground: 0 0% 4%;
+    --secondary: 0 0% 9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 8%;
+    --muted-foreground: 0 0% 55%;
+    --accent: 0 0% 11%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 0% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 11%;
+    --input: 0 0% 9%;
+    --ring: 0 0% 85%;
+    --radius: 0.5rem;
+    --condo-accent: 217 35% 58%;
+    --condo-accent-muted: 217 25% 12%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  /* Transição suave ao trocar de tema (aplicada via JS para evitar flash inicial) */
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition: background-color 200ms ease, border-color 200ms ease, color 150ms ease, box-shadow 200ms ease !important;
+    transition-delay: 0s !important;
+  }
+}
+
+@layer components {
+  .dark .rounded-lg.border.border-border {
+    box-shadow: 0 1px 0 0 hsl(0 0% 100% / 0.03);
+  }
+
+  .period-hero-shell {
+    border-color: hsl(0 0% 100% / 0.12) !important;
+    background: linear-gradient(135deg, hsl(0 0% 8% / 0.96), hsl(0 0% 4% / 0.96)) !important;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
+  }
+
+  .period-hero-inner {
+    border-color: hsl(0 0% 100% / 0.12) !important;
+    background: linear-gradient(135deg, hsl(0 0% 8% / 0.72), hsl(0 0% 4% / 0.58)) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 16px 40px rgba(0, 0, 0, 0.24) !important;
+  }
+
+  .period-hero-nav {
+    border-color: hsl(0 0% 100% / 0.12) !important;
+    background-color: hsl(0 0% 8% / 0.66) !important;
+  }
+
+  .period-hero-chip {
+    border-color: hsl(0 0% 100% / 0.14) !important;
+    background-color: hsl(0 0% 100% / 0.06) !important;
+    color: hsl(0 0% 96%) !important;
+  }
+
+  .period-hero-title {
+    background-image: linear-gradient(135deg, hsl(0 0% 100%), hsl(0 0% 92%), hsl(0 0% 72%)) !important;
+  }
+
+  .period-hero-text {
+    color: hsl(0 0% 74%) !important;
+  }
+
+  .period-hero-text strong,
+  .period-hero-text span {
+    color: hsl(0 0% 96%) !important;
+  }
+
+  .period-filter-label {
+    color: hsl(0 0% 98%) !important;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45) !important;
+  }
+
+  .period-select-trigger {
+    border-color: hsl(0 0% 100% / 0.12) !important;
+    background-color: hsl(0 0% 9% / 0.88) !important;
+    color: hsl(0 0% 98%) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+    backdrop-filter: blur(12px);
+  }
+
+  .period-select-trigger:hover {
+    background-color: hsl(0 0% 11% / 0.94) !important;
+  }
+
+  .period-select-trigger:focus-visible {
+    border-color: hsl(0 0% 100% / 0.2) !important;
+  }
+
+  .period-select-trigger > span,
+  .period-select-trigger svg {
+    color: hsl(0 0% 98%) !important;
+  }
+
+  .period-current-button {
+    border-color: hsl(0 0% 100% / 0.12) !important;
+    background-color: hsl(0 0% 9%) !important;
+    color: hsl(0 0% 98%) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  }
+
+  .period-current-button:hover {
+    background-color: hsl(0 0% 13%) !important;
+    color: hsl(0 0% 98%) !important;
+  }
+
+  /* Esconde barras de scroll mantendo a rolagem */
+  .scrollbar-hide {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
