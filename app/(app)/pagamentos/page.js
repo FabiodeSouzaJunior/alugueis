@@ -351,6 +351,7 @@ function PagamentosContent() {
               payment={editingPayment}
               tenants={tenants}
               properties={properties}
+              payments={allPayments}
               onSave={handleSave}
               onCancel={() => { setDialogOpen(false); setEditingPayment(null); setSaveError(null); }}
               saving={saving}
@@ -360,7 +361,7 @@ function PagamentosContent() {
       ),
     });
     return () => setPageHeader({ title: null, description: null, action: null });
-  }, [setPageHeader, dialogOpen, editingPayment, saveError, tenants, saving, handleSave]);
+  }, [setPageHeader, dialogOpen, editingPayment, saveError, tenants, properties, allPayments, saving, handleSave]);
 
   const byTenant = Object.fromEntries(tenants.map((t) => [t.id, t]));
   const kitnets = [...new Set(tenants.map((t) => t.kitnetNumber).filter(Boolean))].sort();

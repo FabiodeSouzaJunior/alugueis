@@ -69,12 +69,23 @@ async function _PUT(request, context) {
     if (incrementAmount != null && incrementAmount < 0) {
       return NextResponse.json({ error: "Valor pago não pode ser negativo." }, { status: 400 });
     }
-    let amount = incrementAmount === undefined ? currentAmount : currentAmount + incrementAmount;
+    const requestedAmount = incrementAmount === undefined ? currentAmount : currentAmount + incrementAmount;
     const hasExpectedAmountInput = body.expectedAmount != null && body.expectedAmount !== "";
     const newExpectedAmount = hasExpectedAmountInput
       ? normalizeExpectedAmount(body.expectedAmount)
       : normalizeExpectedAmount(row.expected_amount);
-    if (newExpectedAmount != null && amount > newExpectedAmount) amount = newExpectedAmount;
+    const remainingAmount = Math.max(newExpectedAmount - currentAmount, 0);
+    if (newExpectedAmount != null && requestedAmount > newExpectedAmount) {
+      return NextResponse.json(
+        {
+          error: `Valor pago não pode ultrapassar o saldo restante de R$ ${remainingAmount
+            .toFixed(2)
+            .replace(".", ",")}.`,
+        },
+        { status: 400 }
+      );
+    }
+    const amount = requestedAmount;
     const statusFromBody = (body.status || "").toString().toLowerCase();
     const status = resolvePaymentStatus({
       statusFromBody,

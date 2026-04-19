@@ -40,6 +40,10 @@ function parseCurrencyInput(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function getPaymentDueAmount(payment) {
+  return Number(payment?.expectedAmount) || Number(payment?.amount) || 0;
+}
+
 function resolvePaymentStatus({ amount, expectedAmount, dueDate }) {
   const paidAmount = Number(amount) || 0;
   const dueAmount = Number(expectedAmount) || 0;
@@ -51,7 +55,7 @@ function resolvePaymentStatus({ amount, expectedAmount, dueDate }) {
   return "pendente";
 }
 
-export function PaymentForm({ payment, tenants, properties = [], onSave, onCancel, saving }) {
+export function PaymentForm({ payment, tenants, properties = [], payments = [], onSave, onCancel, saving }) {
   const activeTenants = useMemo(
     () => (Array.isArray(tenants) ? tenants.filter((t) => t.status === "ativo") : []),
     [tenants]
@@ -76,6 +80,16 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
     const prop = properties.find((p) => String(p.id) === selectedPropertyId);
     return prop?.units || [];
   }, [selectedPropertyId, properties]);
+
+  const existingPaymentForSelection = useMemo(() => {
+    if (payment?.id || !form.tenantId) return null;
+    return (Array.isArray(payments) ? payments : []).find(
+      (item) =>
+        String(item.tenantId) === String(form.tenantId) &&
+        Number(item.month) === Number(form.month) &&
+        Number(item.year) === Number(form.year)
+    ) || null;
+  }, [payment?.id, payments, form.tenantId, form.month, form.year]);
 
   const lastSyncedPaymentId = useRef(null);
   useEffect(() => {
@@ -127,6 +141,38 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
 
   const expectedNum = form.expectedAmount ? parseCurrencyInput(form.expectedAmount) : 0;
   const paidNum = form.amount !== "" ? parseCurrencyInput(form.amount) : null;
+  const currentPaidNum = payment?.amount != null ? Number(payment.amount) || 0 : 0;
+  const maxPaidInput = expectedNum > 0
+    ? Math.max(expectedNum - currentPaidNum, 0)
+    : 0;
+  const pendingAfterInput = expectedNum > 0 && paidNum != null
+    ? Math.max(expectedNum - currentPaidNum - paidNum, 0)
+    : null;
+
+  const formatCurrencyBRL = (value) =>
+    Number(value || 0).toFixed(2).replace(".", ",");
+
+  const handleAmountChange = (value) => {
+    const formatted = formatCurrencyInput(value);
+    const typedAmount = parseCurrencyInput(formatted);
+    const nextAmount =
+      expectedNum > 0 && typedAmount > maxPaidInput
+        ? formatCurrencyFromNumber(maxPaidInput)
+        : formatted;
+
+    if (expectedNum > 0 && typedAmount > maxPaidInput) {
+      setValidationError(
+        `Valor pago não pode ultrapassar o saldo restante de R$ ${formatCurrencyBRL(maxPaidInput)}.`
+      );
+    } else {
+      setValidationError(null);
+    }
+
+    setForm((p) => ({
+      ...p,
+      amount: nextAmount,
+    }));
+  };
 
   useEffect(() => {
     if (payment?.id) return;
@@ -151,6 +197,14 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
     if (payment?.id) return;
     if (!form.tenantId) {
       setForm((p) => ({ ...p, expectedAmount: "" }));
+      return;
+    }
+
+    if (existingPaymentForSelection) {
+      setForm((p) => ({
+        ...p,
+        expectedAmount: formatCurrencyFromNumber(getPaymentDueAmount(existingPaymentForSelection)),
+      }));
       return;
     }
 
@@ -183,7 +237,15 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
     return () => {
       cancelled = true;
     };
-  }, [payment?.id, form.tenantId, form.month, form.year, selectedPropertyId, activeTenants]);
+  }, [
+    payment?.id,
+    form.tenantId,
+    form.month,
+    form.year,
+    selectedPropertyId,
+    activeTenants,
+    existingPaymentForSelection,
+  ]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -199,8 +261,12 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
       setValidationError("Valor pago não pode ser negativo.");
       return;
     }
-    if (false && expected > 0 && paid > expected) {
-      setValidationError("Valor pago não pode ser maior que o valor devido.");
+    const currentPaid = payment?.amount != null ? Number(payment.amount) || 0 : 0;
+    const maxAllowedPaid = expected > 0 ? Math.max(expected - currentPaid, 0) : 0;
+    if (expected > 0 && paid > maxAllowedPaid) {
+      setValidationError(
+        `Valor pago não pode ultrapassar o saldo restante de R$ ${formatCurrencyBRL(maxAllowedPaid)}.`
+      );
       return;
     }
     if (expected === 0 && paid > 0) {
@@ -258,7 +324,6 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
         setForm((p) => ({
           ...p,
           tenantId: String(tenant.id),
-          expectedAmount: tenant.rentValue != null ? formatCurrencyFromNumber(tenant.rentValue || 0) : p.expectedAmount,
         }));
         setTenantQuery(getTenantLabel(tenant));
       }
@@ -423,37 +488,29 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
           </p>
         </div>
         <div className="grid gap-2">
-          <Label>Valor a adicionar (R$)</Label>
+          <Label>Valor pago (R$)</Label>
           <Input
             type="text"
             inputMode="decimal"
             value={form.amount}
-            onChange={(e) =>
-              setForm((p) => ({
-                ...p,
-                amount: formatCurrencyInput(e.target.value),
-              }))
-            }
+            onChange={(e) => handleAmountChange(e.target.value)}
             placeholder="0,00"
           />
           <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
-            Esse valor será somado ao valor pago atual, seguindo a mesma base usada no portal do inquilino.
-            {payment?.amount != null ? ` Pago atual: R$ ${Number(payment.amount).toFixed(2).replace(".", ",")}.` : ""}
+            {payment
+              ? "Esse valor será somado ao valor pago atual, seguindo a mesma base usada no portal do inquilino."
+              : "Informe o valor efetivamente pago, seguindo a mesma base usada no portal do inquilino."}
+            {payment?.amount != null ? ` Pago atual: R$ ${formatCurrencyBRL(currentPaidNum)}.` : ""}
           </p>
           <p className="text-xs text-muted-foreground">O que a pessoa já pagou. Se pagou menos que o devido, o restante fica pendente.</p>
-          {false && expectedNum > 0 && (
+          {expectedNum > 0 && (
             <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
-              Máximo permitido: R$ {expectedNum.toFixed(2).replace(".", ",")}
+              Máximo permitido: R$ {formatCurrencyBRL(maxPaidInput)}
             </p>
           )}
-          {false && expectedNum > 0 && paidNum != null && paidNum < expectedNum && (
+          {expectedNum > 0 && pendingAfterInput != null && pendingAfterInput > 0 && (
             <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
-              Faltando (pendente): R$ {(expectedNum - paidNum).toFixed(2).replace(".", ",")}
-            </p>
-          )}
-          {false && paidNum != null && expectedNum > 0 && paidNum > expectedNum && (
-            <p className="text-xs font-medium text-destructive">
-              ⚠️ Valor excede o devido em R$ {(paidNum - expectedNum).toFixed(2).replace(".", ",")}
+              Faltando (pendente): R$ {formatCurrencyBRL(pendingAfterInput)}
             </p>
           )}
         </div>
