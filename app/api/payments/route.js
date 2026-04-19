@@ -40,6 +40,12 @@ function normalizeExpectedAmount(value) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
+function normalizeIncrementAmount(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return parsed;
+}
+
 async function findPaymentByTenantPeriod(tenantId, month, year) {
   const [rows] = await pool.query(
     "SELECT * FROM payments WHERE tenant_id = ? AND month = ? AND year = ?",
@@ -101,8 +107,13 @@ async function _POST(request, context) {
       body.dueDate ||
       getDueDateForPeriod(month, year, tenant?.paymentDay ?? tenant?.payment_day);
     const statusFromBody = (body.status || "").toString().toLowerCase();
-    const parsedAmount = Number(body.amount);
-    let amount = Number.isFinite(parsedAmount) ? parsedAmount : 0;
+    const incrementAmount = normalizeIncrementAmount(body.amount);
+    if (incrementAmount < 0) {
+      return NextResponse.json(
+        { error: "Valor pago não pode ser negativo." },
+        { status: 400 }
+      );
+    }
     const existingPayment = await findPaymentByTenantPeriod(tenantId, month, year);
     let expectedAmount = normalizeExpectedAmount(existingPayment?.expected_amount);
     if (expectedAmount == null) {
@@ -117,6 +128,8 @@ async function _POST(request, context) {
         },
       });
     }
+    const currentStoredAmount = Number(existingPayment?.amount) || 0;
+    let amount = currentStoredAmount + incrementAmount;
     
     // Validação: não permitir valor pago maior que o valor devido
     if (expectedAmount > 0 && amount > expectedAmount) {
@@ -183,7 +196,9 @@ async function _POST(request, context) {
         if (!conflictedPayment?.id) throw error;
         const conflictedExpectedAmount =
           normalizeExpectedAmount(conflictedPayment.expected_amount) ?? expectedAmount;
-        if (conflictedExpectedAmount > 0 && amount > conflictedExpectedAmount) {
+        const conflictedCurrentAmount = Number(conflictedPayment.amount) || 0;
+        const conflictedNextAmount = conflictedCurrentAmount + incrementAmount;
+        if (conflictedExpectedAmount > 0 && conflictedNextAmount > conflictedExpectedAmount) {
           return NextResponse.json(
             {
               error: `Valor pago não pode ser maior que o valor devido (R$ ${conflictedExpectedAmount
@@ -197,7 +212,7 @@ async function _POST(request, context) {
           statusFromBody,
           paymentDate: null,
           dueDate,
-          amount,
+          amount: conflictedNextAmount,
           expectedAmount: conflictedExpectedAmount,
         });
         const conflictedPaymentDate = resolveStoredPaymentDate({
@@ -208,7 +223,7 @@ async function _POST(request, context) {
         payment = await updatePaymentRecord(conflictedPayment.id, {
           dueDate,
           paymentDate: conflictedPaymentDate,
-          amount,
+          amount: conflictedNextAmount,
           expectedAmount: conflictedExpectedAmount,
           status: conflictedStatus,
         });

@@ -29,6 +29,12 @@ function normalizeExpectedAmount(value) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+function normalizeIncrementAmount(value) {
+  if (value == null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 async function _GET(request, { params }) {
   try {
     const resolvedParams = typeof params.then === "function" ? await params : params;
@@ -51,9 +57,7 @@ async function _PUT(request, context) {
     }
     const body = await request.json();
     const dueDate = body.dueDate && String(body.dueDate).trim() ? body.dueDate : null;
-    const amountRaw = body.amount;
-    const amountParsed = typeof amountRaw === "number" ? amountRaw : Number(amountRaw);
-    let amount = amountRaw != null && !isNaN(amountParsed) ? amountParsed : undefined;
+    const incrementAmount = normalizeIncrementAmount(body.amount);
     const [currentRows] = await pool.query("SELECT * FROM payments WHERE id = ?", [id]);
     if (currentRows.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const row = currentRows[0];
@@ -62,8 +66,14 @@ async function _PUT(request, context) {
       message: "Not found",
     });
     const currentAmount = Number(row.amount) || 0;
-    if (amount === undefined) amount = currentAmount;
-    const newExpectedAmount = normalizeExpectedAmount(row.expected_amount);
+    if (incrementAmount != null && incrementAmount < 0) {
+      return NextResponse.json({ error: "Valor pago não pode ser negativo." }, { status: 400 });
+    }
+    let amount = incrementAmount === undefined ? currentAmount : currentAmount + incrementAmount;
+    const hasExpectedAmountInput = body.expectedAmount != null && body.expectedAmount !== "";
+    const newExpectedAmount = hasExpectedAmountInput
+      ? normalizeExpectedAmount(body.expectedAmount)
+      : normalizeExpectedAmount(row.expected_amount);
     if (newExpectedAmount != null && amount > newExpectedAmount) amount = newExpectedAmount;
     const statusFromBody = (body.status || "").toString().toLowerCase();
     const status = resolvePaymentStatus({

@@ -16,6 +16,8 @@ import {
 } from "@/server/modules/financial/payment-automation.core";
 
 function normalizePaymentRecord(paymentLike = {}) {
+  const rawExpectedAmount = paymentLike.expectedAmount ?? paymentLike.expected_amount;
+
   return {
     id: paymentLike.id ?? null,
     tenantId: paymentLike.tenantId ?? paymentLike.tenant_id ?? null,
@@ -24,8 +26,11 @@ function normalizePaymentRecord(paymentLike = {}) {
     amount: normalizeMoney(paymentLike.amount),
     paymentDate: paymentLike.paymentDate ?? paymentLike.payment_date ?? null,
     dueDate: paymentLike.dueDate ?? paymentLike.due_date ?? null,
-    expectedAmount: normalizeMoney(paymentLike.expectedAmount ?? paymentLike.expected_amount),
+    expectedAmount: normalizeMoney(rawExpectedAmount),
+    hasExpectedAmount: rawExpectedAmount != null && rawExpectedAmount !== "",
     status: String(paymentLike.status || "").toLowerCase(),
+    createdAt: paymentLike.createdAt ?? paymentLike.created_at ?? null,
+    updatedAt: paymentLike.updatedAt ?? paymentLike.updated_at ?? null,
   };
 }
 
@@ -156,7 +161,12 @@ export async function getPaymentExpectedAmountForPeriod({
 
 export async function syncOpenPaymentExpectedAmount(
   paymentLike,
-  { tenantRow = null, cache = null, ignorePeriodGuard = false } = {}
+  {
+    tenantRow = null,
+    cache = null,
+    ignorePeriodGuard = false,
+    preserveManualExpectedAmount = false,
+  } = {}
 ) {
   const payment = normalizePaymentRecord(paymentLike);
   if (!payment.id || !payment.tenantId || !payment.month || !payment.year) {
@@ -214,6 +224,40 @@ export async function syncOpenPaymentExpectedAmount(
     tenantRow,
     cache,
   });
+
+  if (
+    preserveManualExpectedAmount &&
+    payment.hasExpectedAmount &&
+    payment.expectedAmount !== expectedAmount
+  ) {
+    const currentStatus = resolvePaymentStatus({
+      paymentDate: payment.paymentDate,
+      dueDate: payment.dueDate,
+      amount: payment.amount,
+      expectedAmount: payment.expectedAmount,
+    });
+
+    if (currentStatus !== payment.status) {
+      await pool.query(
+        `UPDATE payments
+            SET status = ?,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`,
+        [currentStatus, payment.id]
+      );
+    }
+
+    return {
+      changed: currentStatus !== payment.status,
+      reason: "stored-expected-amount-preserved",
+      payment: {
+        ...paymentLike,
+        expectedAmount: payment.expectedAmount,
+        status: currentStatus,
+      },
+    };
+  }
+
   const nextStatus = resolvePaymentStatus({
     paymentDate: payment.paymentDate,
     dueDate: payment.dueDate,

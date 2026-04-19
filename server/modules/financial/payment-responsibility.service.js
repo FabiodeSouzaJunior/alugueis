@@ -29,6 +29,31 @@ function hasFreshFinancialResponsibilityCache() {
   );
 }
 
+function normalizeMoney(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizePaymentStatus(status) {
+  return String(status || "").trim().toLowerCase();
+}
+
+function shouldApplyPortalPaidAmountRule(payment) {
+  if (!payment?.id) return false;
+
+  const status = normalizePaymentStatus(payment.status);
+  if (status === "pago") return false;
+
+  const periodRelation = getPeriodRelationToCurrent({
+    month: payment.month,
+    year: payment.year,
+    referenceDate: new Date(),
+    timeZone: getBillingTimeZone(),
+  });
+
+  return periodRelation === "current" || periodRelation === "future";
+}
+
 async function readFinancialResponsibilityRows() {
   const supabase = getSupabaseClient();
   const [tenantResult, unitResult, propertyResult] = await Promise.all([
@@ -131,6 +156,69 @@ export async function assertFinancialTenantById(
   return tenant;
 }
 
+async function applyPortalPaidCheckoutTotals(payments = [], supabase = getSupabaseClient()) {
+  if (!Array.isArray(payments) || payments.length === 0) {
+    return payments;
+  }
+
+  const eligiblePayments = payments.filter(shouldApplyPortalPaidAmountRule);
+  if (eligiblePayments.length === 0) {
+    return payments;
+  }
+
+  const paymentIds = eligiblePayments
+    .map((payment) => payment?.id)
+    .filter(Boolean);
+
+  if (paymentIds.length === 0) {
+    return payments;
+  }
+
+  const { data, error } = await supabase
+    .from("payment_gateway_checkouts")
+    .select("payment_id, amount_base, amount_total")
+    .eq("provider", "abacatepay")
+    .eq("status", "paid")
+    .in("payment_id", paymentIds);
+
+  if (error) {
+    console.error("[financial-payments] Failed to load portal paid checkout totals", error);
+    return payments;
+  }
+
+  const paidAmountByPaymentId = new Map();
+  const paidBaseAmountByPaymentId = new Map();
+
+  for (const checkout of data || []) {
+    if (!checkout?.payment_id) continue;
+
+    const currentTotal = paidAmountByPaymentId.get(checkout.payment_id) || 0;
+    const currentBaseTotal = paidBaseAmountByPaymentId.get(checkout.payment_id) || 0;
+    paidAmountByPaymentId.set(
+      checkout.payment_id,
+      normalizeMoney(currentTotal + normalizeMoney(checkout.amount_total))
+    );
+    paidBaseAmountByPaymentId.set(
+      checkout.payment_id,
+      normalizeMoney(currentBaseTotal + normalizeMoney(checkout.amount_base))
+    );
+  }
+
+  return payments.map((payment) => {
+    if (!payment?.id || !shouldApplyPortalPaidAmountRule(payment)) return payment;
+
+    const portalPaidTotal = normalizeMoney(paidAmountByPaymentId.get(payment.id) || 0);
+    const portalPaidBase = normalizeMoney(paidBaseAmountByPaymentId.get(payment.id) || 0);
+    const storedPaidAmount = normalizeMoney(payment.amount);
+    const manualAddition = Math.max(storedPaidAmount - portalPaidBase, 0);
+
+    return {
+      ...payment,
+      amount: normalizeMoney(portalPaidTotal + manualAddition),
+    };
+  });
+}
+
 export async function listFinancialPayments(filters = {}) {
   const supabase = getSupabaseClient();
   const index = await getFinancialResponsibilityIndex();
@@ -166,6 +254,7 @@ export async function listFinancialPayments(filters = {}) {
   let payments = filterFinancialPayments((data || []).map(rowToPayment), index, {
     tenantId: normalizedTenantId,
   });
+  payments = await applyPortalPaidCheckoutTotals(payments, supabase);
 
   if (payments.length > 0) {
     const paymentTenantIds = Array.from(
@@ -205,6 +294,7 @@ export async function listFinancialPayments(filters = {}) {
           const synced = await syncOpenPaymentExpectedAmount(payment, {
             tenantRow: tenantById[tenantId] || null,
             cache: billingCache,
+            preserveManualExpectedAmount: true,
           });
           return synced.payment;
         }
@@ -242,5 +332,6 @@ export async function getFinancialPaymentById(paymentId) {
   const index = await getFinancialResponsibilityIndex();
   if (!hasFinancialResponsibility(index, data.tenant_id)) return null;
 
-  return rowToPayment(data);
+  const [payment] = await applyPortalPaidCheckoutTotals([rowToPayment(data)], supabase);
+  return payment;
 }

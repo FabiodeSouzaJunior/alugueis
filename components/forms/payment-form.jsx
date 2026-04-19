@@ -91,7 +91,7 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
           month: payment.month || new Date().getMonth() + 1,
           year: payment.year || new Date().getFullYear(),
           expectedAmount: expected != null ? formatCurrencyFromNumber(expected) : "",
-          amount: payment.amount != null && payment.amount !== "" ? formatCurrencyFromNumber(payment.amount) : "",
+          amount: "",
           dueDate: formatDateInput(payment.dueDate) || "",
           status: resolvePaymentStatus({
             amount: payment.amount,
@@ -199,7 +199,7 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
       setValidationError("Valor pago não pode ser negativo.");
       return;
     }
-    if (expected > 0 && paid > expected) {
+    if (false && expected > 0 && paid > expected) {
       setValidationError("Valor pago não pode ser maior que o valor devido.");
       return;
     }
@@ -345,10 +345,6 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
               setForm((p) => ({
                 ...p,
                 tenantId: String(selected.id),
-                amount:
-                  !p.amount && selected.rentValue != null
-                    ? formatCurrencyFromNumber(selected.rentValue || 0)
-                    : p.amount,
               }));
               if (selected.propertyId) {
                 setSelectedPropertyId(String(selected.propertyId));
@@ -409,15 +405,25 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
           <Input
             type="text"
             value={form.expectedAmount}
-            readOnly
+            onChange={(e) =>
+              setForm((p) => ({
+                ...p,
+                expectedAmount: formatCurrencyInput(e.target.value),
+              }))
+            }
+            readOnly={!payment}
             placeholder="0,00"
-            disabled
-            className="bg-muted"
+            disabled={!payment}
+            className={!payment ? "bg-muted" : ""}
           />
-          <p className="text-xs text-muted-foreground">Valor do aluguel do inquilino (cadastro em Inquilinos).</p>
+          <p className="text-xs text-muted-foreground">
+            {payment
+              ? "Ajuste manual do valor devido deste pagamento."
+              : "Valor do aluguel do inquilino (cadastro em Inquilinos)."}
+          </p>
         </div>
         <div className="grid gap-2">
-          <Label>Valor pago (R$)</Label>
+          <Label>Valor a adicionar (R$)</Label>
           <Input
             type="text"
             inputMode="decimal"
@@ -429,20 +435,23 @@ export function PaymentForm({ payment, tenants, properties = [], onSave, onCance
               }))
             }
             placeholder="0,00"
-            className={paidNum != null && expectedNum > 0 && paidNum > expectedNum ? "border-destructive" : ""}
           />
+          <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+            Esse valor será somado ao valor pago atual, seguindo a mesma base usada no portal do inquilino.
+            {payment?.amount != null ? ` Pago atual: R$ ${Number(payment.amount).toFixed(2).replace(".", ",")}.` : ""}
+          </p>
           <p className="text-xs text-muted-foreground">O que a pessoa já pagou. Se pagou menos que o devido, o restante fica pendente.</p>
-          {expectedNum > 0 && (
+          {false && expectedNum > 0 && (
             <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
               Máximo permitido: R$ {expectedNum.toFixed(2).replace(".", ",")}
             </p>
           )}
-          {expectedNum > 0 && paidNum != null && paidNum < expectedNum && (
+          {false && expectedNum > 0 && paidNum != null && paidNum < expectedNum && (
             <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
               Faltando (pendente): R$ {(expectedNum - paidNum).toFixed(2).replace(".", ",")}
             </p>
           )}
-          {paidNum != null && expectedNum > 0 && paidNum > expectedNum && (
+          {false && paidNum != null && expectedNum > 0 && paidNum > expectedNum && (
             <p className="text-xs font-medium text-destructive">
               ⚠️ Valor excede o devido em R$ {(paidNum - expectedNum).toFixed(2).replace(".", ",")}
             </p>

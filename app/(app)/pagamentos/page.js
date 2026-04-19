@@ -243,6 +243,19 @@ function PagamentosContent() {
     }
   }, [tenantHistoryById]);
 
+  const toggleExpandedTenant = useCallback((tenantId) => {
+    if (!tenantId) return;
+
+    setExpandedTenantId((current) => {
+      if (current === tenantId) return null;
+      return tenantId;
+    });
+
+    if (expandedTenantId !== tenantId) {
+      ensureTenantHistory(tenantId).catch(() => {});
+    }
+  }, [ensureTenantHistory, expandedTenantId]);
+
   const handleSave = useCallback(async (payload) => {
     setSaveError(null);
     setSaving(true);
@@ -257,9 +270,9 @@ function PagamentosContent() {
         status: payload.status || "pendente",
       };
       const paymentId = editingPayment?.id;
-      let updatedId = paymentId;
+      let savedPayment = null;
       if (paymentId) {
-        await updatePayment(paymentId, pay);
+        savedPayment = await updatePayment(paymentId, pay);
       } else {
         if (!pay.tenantId) {
           setSaveError("Selecione o inquilino para registrar o pagamento.");
@@ -273,29 +286,45 @@ function PagamentosContent() {
             Number(p.year) === Number(pay.year)
         );
         if (existing) {
-          await updatePayment(existing.id, pay);
-          updatedId = existing.id;
+          savedPayment = await updatePayment(existing.id, pay);
         } else {
-          const created = await createPayment(pay);
-          updatedId = created?.id;
+          savedPayment = await createPayment(pay);
         }
       }
       setDialogOpen(false);
       setEditingPayment(null);
-      setTenantHistoryById((prev) => {
-        if (!pay.tenantId) return prev;
-        const next = { ...prev };
-        delete next[pay.tenantId];
-        return next;
-      });
+      if (savedPayment?.id) {
+        const mergeSavedPayment = (list) =>
+          (Array.isArray(list) ? list : []).map((item) =>
+            item.id === savedPayment.id ? { ...item, ...savedPayment } : item
+          );
+
+        setPaymentsState(mergeSavedPayment);
+        setAllPaymentsState(mergeSavedPayment);
+        setTenantHistoryById((prev) => {
+          const tenantId = savedPayment.tenantId || pay.tenantId;
+          if (!tenantId || !prev[tenantId]) return prev;
+          return {
+            ...prev,
+            [tenantId]: mergeSavedPayment(prev[tenantId]),
+          };
+        });
+      }
       await load();
+      if (pay.tenantId && expandedTenantId === pay.tenantId) {
+        const history = await fetchTenantPaymentHistory(pay.tenantId);
+        setTenantHistoryById((prev) => ({
+          ...prev,
+          [pay.tenantId]: Array.isArray(history) ? history : [],
+        }));
+      }
     } catch (e) {
       console.error(e);
       setSaveError(e?.message || "Erro ao salvar. Tente novamente.");
     } finally {
       setSaving(false);
     }
-  }, [editingPayment, payments, load]);
+  }, [editingPayment, payments, load, expandedTenantId]);
 
   useEffect(() => {
     setPageHeader({
@@ -393,7 +422,7 @@ function PagamentosContent() {
 
   const getTenantPayments = useCallback(
     (tenantId) => {
-      const tenantPayments = allPayments.filter((p) => p.tenantId === tenantId);
+      const tenantPayments = tenantHistoryById[tenantId] || [];
       return [...tenantPayments]
         .map((payment) => ({
           ...payment,
@@ -411,7 +440,7 @@ function PagamentosContent() {
           return (b.dueDate || "").localeCompare(a.dueDate || "");
         });
     },
-    [byTenant, allPayments]
+    [byTenant, tenantHistoryById]
   );
 
   let filtered = payments.map((p) => ({
@@ -911,16 +940,14 @@ function PagamentosContent() {
                   return (
                     <Fragment key={tenantRow.tenantId}>
                       <TableRow
-                        onClick={() => {
-                          setExpandedTenantId(expandedTenantId === tenantRow.tenantId ? null : tenantRow.tenantId);
-                        }}
+                        onClick={() => toggleExpandedTenant(tenantRow.tenantId)}
                         className="cursor-pointer hover:bg-muted/50"
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            setExpandedTenantId(expandedTenantId === tenantRow.tenantId ? null : tenantRow.tenantId);
+                            toggleExpandedTenant(tenantRow.tenantId);
                           }
                         }}
                       >
@@ -949,6 +976,11 @@ function PagamentosContent() {
                         <TableRow>
                           <TableCell colSpan={6} className="bg-muted/30 p-0 align-top">
                             <div className="space-y-3 p-4">
+                              {loadingTenantHistoryId === tenantRow.tenantId && (
+                                <p className="text-sm text-muted-foreground">
+                                  Carregando historico oficial do portal do inquilino...
+                                </p>
+                              )}
                               {tenantPayments.length > 0 && (
                                 <div>
                                   <h4 className="mb-2 text-sm font-medium text-muted-foreground">
@@ -1013,7 +1045,7 @@ function PagamentosContent() {
                                   </div>
                                 </div>
                               )}
-                              {tenantPayments.length === 0 && (
+                              {tenantPayments.length === 0 && loadingTenantHistoryId !== tenantRow.tenantId && (
                                 <p className="text-sm text-muted-foreground">
                                   Nenhum outro pagamento registrado para este inquilino.
                                 </p>
