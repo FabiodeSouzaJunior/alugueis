@@ -666,14 +666,14 @@ export default function ImoveisPage() {
               <CardDescription>
                 Imóveis cadastrados. Veja abaixo as unidades de cada imóvel.
               </CardDescription>
-              <div className="mt-3 flex items-center gap-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3">
+              <div className="mt-3 flex flex-col items-start gap-2 rounded-lg border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
                 <MousePointerClick className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-500" />
                 <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
                   Clique no imóvel para ver as unidades.
                 </p>
               </div>
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <div className="relative max-w-xs flex-1">
+                <div className="relative w-full sm:max-w-xs sm:flex-1">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     placeholder="Buscar por nome ou observações..."
@@ -702,7 +702,7 @@ export default function ImoveisPage() {
                 />
               ) : (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5">
                     {filtered.map((p) => {
                       const isExpanded = expandedId === p.id;
                       return (
@@ -777,8 +777,8 @@ export default function ImoveisPage() {
                             </Button>
                           </div>
                         </div>
-                        <div className="overflow-x-auto">
-                        <Table className="min-w-[640px]">
+                        <div className="overflow-visible">
+                        <Table mobileCards className="min-w-[640px]">
                           <TableHeader>
                             <TableRow className="border-sky-500/20 hover:bg-transparent">
                               <TableHead className="w-28">Identificador</TableHead>
@@ -791,18 +791,18 @@ export default function ImoveisPage() {
                           </TableHeader>
                           <TableBody>
                             {units.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={6} className="text-muted-foreground text-center py-8">
+                              <TableRow data-mobile-detail="true">
+                                <TableCell data-mobile-full="true" colSpan={6} className="text-muted-foreground text-center py-8">
                                   Nenhuma unidade cadastrada. Use &quot;Adicionar unidade&quot; acima para cadastrar.
                                 </TableCell>
                               </TableRow>
                             ) : (
                               units.map((u) => (
                                 <TableRow key={u.id} className="border-sky-500/10">
-                                    <TableCell className="font-medium">{u.unitLabel || "—"}</TableCell>
-                                    <TableCell className="tabular-nums">{u.rentPrice != null ? formatCurrency(u.rentPrice) : "—"}</TableCell>
-                                    <TableCell>{u.maxPeople != null ? u.maxPeople : "—"}</TableCell>
-                                    <TableCell className="align-middle">
+                                    <TableCell data-mobile-primary="true" className="font-medium">{u.unitLabel || "—"}</TableCell>
+                                    <TableCell data-label="Aluguel" className="tabular-nums">{u.rentPrice != null ? formatCurrency(u.rentPrice) : "—"}</TableCell>
+                                    <TableCell data-label="Max. pessoas">{u.maxPeople != null ? u.maxPeople : "—"}</TableCell>
+                                    <TableCell data-label="Responsavel" className="align-middle">
                                       <div className="flex flex-col items-start gap-2">
                                         <div className="flex flex-wrap items-center gap-1.5">
                                           {u.tenantName ? (
@@ -837,7 +837,7 @@ export default function ImoveisPage() {
                                         </div>
                                       </div>
                                     </TableCell>
-                                    <TableCell className="align-middle">
+                                    <TableCell data-label="Quem mora" className="align-middle">
                                       <div className="flex flex-col gap-2">
                                         <div className="flex flex-wrap items-center gap-1.5">
                                           <Button
@@ -868,7 +868,7 @@ export default function ImoveisPage() {
                                         </button>
                                       </div>
                                     </TableCell>
-                                    <TableCell className="text-right align-middle">
+                                    <TableCell data-mobile-actions="true" className="text-right align-middle">
                                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingUnit({ unit: u, property: p })} title="Editar unidade">
                                         <Pencil className="h-3.5 w-3.5" />
                                       </Button>

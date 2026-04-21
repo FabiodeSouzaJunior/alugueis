@@ -237,7 +237,7 @@ export default function ObraEtapasPage() {
           {loading ? (
             <p className="py-8 text-center text-muted-foreground">Carregando...</p>
           ) : (
-            <Table>
+            <Table mobileCards>
               <TableHeader>
                 <TableRow className="border-0 bg-muted/40 hover:bg-muted/40">
                   <TableHead className="h-11 px-4 py-3 font-semibold text-foreground">Etapa</TableHead>
@@ -251,8 +251,8 @@ export default function ObraEtapasPage() {
               </TableHeader>
               <TableBody>
                 {stages.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                  <TableRow data-mobile-detail="true">
+                    <TableCell data-mobile-full="true" colSpan={7} className="h-24 text-center text-muted-foreground">
                       Nenhuma etapa cadastrada.
                     </TableCell>
                   </TableRow>
@@ -263,8 +263,8 @@ export default function ObraEtapasPage() {
                     const availableWorkers = workers.filter((w) => !linkedWorkerIds.has(w.id));
                     return (
                       <TableRow key={s.id}>
-                        <TableCell className="px-4 py-3 font-medium">{s.name}</TableCell>
-                        <TableCell className="px-4 py-3">
+                        <TableCell data-mobile-primary="true" className="px-4 py-3 font-medium">{s.name}</TableCell>
+                        <TableCell data-label="Status" className="px-4 py-3">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
@@ -291,7 +291,7 @@ export default function ObraEtapasPage() {
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
-                        <TableCell className="px-4 py-3">
+                        <TableCell data-label="Trabalhadores" className="px-4 py-3">
                           <div className="flex flex-wrap items-center gap-1.5">
                             {stageLinks.map((sw) => {
                               const w = workers.find((x) => x.id === sw.workerId);
@@ -322,7 +322,7 @@ export default function ObraEtapasPage() {
                                 }}
                                 onOpenChange={(open) => !open && setAddingWorkerStageId(null)}
                               >
-                                <SelectTrigger className="h-8 w-[160px]">
+                                <SelectTrigger className="h-8 w-full sm:w-[160px]">
                                   <SelectValue placeholder="Selecionar trabalhador" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -351,10 +351,10 @@ export default function ObraEtapasPage() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="px-4 py-3 text-muted-foreground">{formatDate(s.startDate) || "–"}</TableCell>
-                        <TableCell className="px-4 py-3 text-muted-foreground">{formatDate(s.dueDate) || "–"}</TableCell>
-                        <TableCell className="px-4 py-3 text-muted-foreground">{s.responsible || "–"}</TableCell>
-                        <TableCell className="px-4 py-3 text-right">
+                        <TableCell data-label="Inicio" className="px-4 py-3 text-muted-foreground">{formatDate(s.startDate) || "–"}</TableCell>
+                        <TableCell data-label="Previsao" className="px-4 py-3 text-muted-foreground">{formatDate(s.dueDate) || "–"}</TableCell>
+                        <TableCell data-label="Responsavel" className="px-4 py-3 text-muted-foreground">{s.responsible || "–"}</TableCell>
+                        <TableCell data-mobile-actions="true" className="px-4 py-3 text-right">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingStage(s); setDialogOpen(true); }} title="Editar">
                             <Pencil className="h-4 w-4" />
                           </Button>

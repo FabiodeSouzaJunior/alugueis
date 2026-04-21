@@ -98,7 +98,7 @@ export function WaterEnergyConsumptionForm({ tenants = [], onSuccess, onCancel }
             </SelectContent>
           </Select>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
             <Label>Mês</Label>
             <Select
@@ -158,7 +158,7 @@ export function WaterEnergyConsumptionForm({ tenants = [], onSuccess, onCancel }
             placeholder="0,00"
           />
         </div>
-        <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+        <div className="flex flex-col items-start justify-between gap-4 rounded-lg border p-3 sm:flex-row sm:items-center">
           <div className="space-y-0.5">
             <Label htmlFor="add-to-rent">Adicionar no aluguel</Label>
             <p className="text-xs text-muted-foreground">
@@ -183,7 +183,7 @@ export function WaterEnergyConsumptionForm({ tenants = [], onSuccess, onCancel }
           <p className="text-sm text-destructive">{error}</p>
         )}
       </div>
-      <DialogFooter>
+      <DialogFooter className="gap-2">
         <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
           Cancelar
         </Button>

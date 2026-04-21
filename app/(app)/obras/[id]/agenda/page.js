@@ -245,7 +245,7 @@ export default function ObraAgendaPage() {
           <CardDescription>
             Calendário com eventos da agenda e etapas. Clique em um dia vazio para criar evento; clique em um evento para ver o dia.
           </CardDescription>
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap gap-2">
             <Dialog
               open={createModalOpen}
               onOpenChange={(o) => {
@@ -300,8 +300,9 @@ export default function ObraAgendaPage() {
           {loading ? (
             <p className="py-12 text-center text-muted-foreground">Carregando...</p>
           ) : (
-            <div className="h-[600px] rounded-lg border border-border bg-card [&_.rbc-calendar]:font-sans [&_.rbc-calendar>.calendar-toolbar]:w-full [&_.rbc-header]:border-border [&_.rbc-month-view]:border-border [&_.rbc-off-range-bg]:bg-muted/30 [&_.rbc-today]:bg-primary/5 [&_.rbc-event]:py-0.5">
-              <Calendar
+            <div className="h-[560px] overflow-x-auto rounded-lg border border-border bg-card sm:h-[600px] [&_.rbc-calendar]:font-sans [&_.rbc-calendar>.calendar-toolbar]:w-full [&_.rbc-header]:border-border [&_.rbc-month-view]:border-border [&_.rbc-off-range-bg]:bg-muted/30 [&_.rbc-today]:bg-primary/5 [&_.rbc-event]:py-0.5">
+              <div className="h-full min-w-[640px]">
+                <Calendar
                 localizer={localizer}
                 events={events}
                 startAccessor="start"
@@ -324,7 +325,8 @@ export default function ObraAgendaPage() {
                   event: "Evento",
                   noEventsInRange: "Nenhum evento neste período.",
                 }}
-              />
+                />
+              </div>
             </div>
           )}
         </CardContent>

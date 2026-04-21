@@ -1,27 +1,36 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-const Table = React.forwardRef(({ className, ...props }, ref) => (
-  <div className="relative w-full overflow-auto scrollbar-hide">
-    <table
-      ref={ref}
+const Table = React.forwardRef(
+  ({ className, wrapperClassName, mobileCards = false, ...props }, ref) => (
+    <div
       className={cn(
-        "w-full min-w-full table-fixed caption-bottom text-sm border-separate",
-        "[&_tbody_tr_td]:bg-card",
-        "[&_tbody_tr:hover_td]:bg-accent",
-        "[&_tbody_tr.bg-red-500\\/10_td]:!bg-red-500/10 [&_tbody_tr.bg-red-500\\/10:hover_td]:!bg-red-500/15",
-        "[&_tbody_tr.bg-amber-500\\/10_td]:!bg-amber-500/10 [&_tbody_tr.bg-amber-500\\/10:hover_td]:!bg-amber-500/15",
-        "[&_tbody_tr_td:first-child]:rounded-l-lg [&_tbody_tr_td:last-child]:rounded-r-lg",
-        "[&_tbody_tr_td]:border-y [&_tbody_tr_td]:border-border/50",
-        "[&_tbody_tr_td:first-child]:border-l [&_tbody_tr_td:last-child]:border-r",
-        "[&_thead_th]:border-b [&_thead_th]:border-border/50 [&_thead_th]:pb-3",
-        className
+        "relative w-full overflow-auto scrollbar-hide",
+        mobileCards && "responsive-table-wrapper",
+        wrapperClassName
       )}
-      style={{ borderSpacing: "0 6px" }}
-      {...props}
-    />
-  </div>
-));
+    >
+      <table
+        ref={ref}
+        className={cn(
+          "w-full min-w-full table-fixed caption-bottom text-sm border-separate",
+          mobileCards && "responsive-table",
+          "[&_tbody_tr_td]:bg-card",
+          "[&_tbody_tr:hover_td]:bg-accent",
+          "[&_tbody_tr.bg-red-500\\/10_td]:!bg-red-500/10 [&_tbody_tr.bg-red-500\\/10:hover_td]:!bg-red-500/15",
+          "[&_tbody_tr.bg-amber-500\\/10_td]:!bg-amber-500/10 [&_tbody_tr.bg-amber-500\\/10:hover_td]:!bg-amber-500/15",
+          "[&_tbody_tr_td:first-child]:rounded-l-lg [&_tbody_tr_td:last-child]:rounded-r-lg",
+          "[&_tbody_tr_td]:border-y [&_tbody_tr_td]:border-border/50",
+          "[&_tbody_tr_td:first-child]:border-l [&_tbody_tr_td:last-child]:border-r",
+          "[&_thead_th]:border-b [&_thead_th]:border-border/50 [&_thead_th]:pb-3",
+          className
+        )}
+        style={{ borderSpacing: "0 6px" }}
+        {...props}
+      />
+    </div>
+  )
+);
 Table.displayName = "Table";
 
 const TableHeader = React.forwardRef(({ className, ...props }, ref) => (

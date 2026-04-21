@@ -28,7 +28,7 @@ const configs = {
   pendente: {
     icon: Clock,
     label: "Total pendente",
-    description: "No prazo",
+    description: "Saldo em aberto no prazo",
     className: "border-amber-500/30 bg-amber-500/5",
     valueClassName: "text-amber-600 dark:text-amber-400",
   },
@@ -42,7 +42,7 @@ const configs = {
   previsto: {
     icon: TrendingUp,
     label: "Receita prevista",
-    description: "Soma dos valores devidos",
+    description: "Soma a receber se todos pagarem",
     className: "border-blue-500/30 bg-blue-500/5",
     valueClassName: "text-blue-600 dark:text-blue-400",
   },

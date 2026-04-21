@@ -55,7 +55,7 @@ export function ObraMaterialForm({ material, onSave, onCancel, saving }) {
         <Label>Material</Label>
         <Input value={materialName} onChange={(e) => setMaterialName(e.target.value)} placeholder="Nome do material" required />
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="grid gap-2">
           <Label>Quantidade</Label>
           <Input type="number" step="0.001" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />

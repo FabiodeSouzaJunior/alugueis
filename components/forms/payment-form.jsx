@@ -425,7 +425,7 @@ export function PaymentForm({ payment, tenants, properties = [], payments = [], 
           </datalist>
           <p className="text-xs text-muted-foreground">Campo pesquisavel: digite nome ou unidade e selecione apenas o responsavel financeiro.</p>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
             <Label>Mês</Label>
             <Select

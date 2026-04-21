@@ -302,13 +302,13 @@ export default function InquilinosPage() {
                   <button
                     type="button"
                     onClick={() => toggleGroup(key)}
-                    className="flex w-full items-center justify-between gap-3 bg-muted/50 px-5 py-3.5 text-left transition-colors hover:bg-muted/70"
+                    className="flex w-full flex-col items-start justify-between gap-3 bg-muted/50 px-4 py-3.5 text-left transition-colors hover:bg-muted/70 sm:flex-row sm:items-center sm:px-5"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                         <Building2 className="h-4 w-4" />
                       </span>
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-sm font-semibold leading-tight text-foreground">{propName}</p>
                         {propAddress && (
                           <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
@@ -318,7 +318,7 @@ export default function InquilinosPage() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
                         <Users className="h-3 w-3" />
                         {groupTenants.length} inquilino{groupTenants.length !== 1 ? "s" : ""}
@@ -338,7 +338,7 @@ export default function InquilinosPage() {
 
                   {/* Group table */}
                   {expanded && (
-                    <Table>
+                    <Table mobileCards>
                       <TableHeader>
                         <TableRow className="border-t border-border bg-background/50">
                           <TableHead className="w-10" aria-label="Expandir" />
@@ -361,7 +361,7 @@ export default function InquilinosPage() {
                               )}
                               onClick={() => setExpandedId(expandedId === tenant.id ? null : tenant.id)}
                             >
-                              <TableCell className="w-10 py-3 align-middle">
+                              <TableCell data-mobile-full="true" className="w-10 py-3 align-middle">
                                 <span className="inline-flex text-muted-foreground">
                                   {expandedId === tenant.id ? (
                                     <ChevronDown className="h-4 w-4" />
@@ -370,12 +370,12 @@ export default function InquilinosPage() {
                                   )}
                                 </span>
                               </TableCell>
-                              <TableCell className="font-medium">{tenant.name}</TableCell>
-                              <TableCell>{getUnitLabel(tenant.id)}</TableCell>
-                              <TableCell>{tenant.phone || "-"}</TableCell>
-                              <TableCell>{formatCurrency(tenant.rentValue)}</TableCell>
-                              <TableCell>{formatDate(tenant.startDate)}</TableCell>
-                              <TableCell>
+                              <TableCell data-mobile-primary="true" className="font-medium">{tenant.name}</TableCell>
+                              <TableCell data-label="Unidade">{getUnitLabel(tenant.id)}</TableCell>
+                              <TableCell data-label="Telefone">{tenant.phone || "-"}</TableCell>
+                              <TableCell data-label="Aluguel">{formatCurrency(tenant.rentValue)}</TableCell>
+                              <TableCell data-label="Entrada">{formatDate(tenant.startDate)}</TableCell>
+                              <TableCell data-label="Status">
                                 <Badge
                                   variant={tenant.status === "ativo" ? "success" : "secondary"}
                                   className={
@@ -387,7 +387,7 @@ export default function InquilinosPage() {
                                   {tenant.status === "ativo" ? "Ativo" : "Saiu"}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                              <TableCell data-mobile-actions="true" className="text-right" onClick={(e) => e.stopPropagation()}>
                                 <div className="flex justify-end gap-2">
                                   <Button
                                     variant="ghost"
@@ -420,8 +420,8 @@ export default function InquilinosPage() {
                               </TableCell>
                             </TableRow>
                             {expandedId === tenant.id && (
-                              <TableRow className="hover:bg-transparent">
-                                <TableCell colSpan={9} className="border-t-0 bg-muted/20 p-0 align-top">
+                              <TableRow data-mobile-detail="true" className="hover:bg-transparent">
+                                <TableCell data-mobile-full="true" colSpan={9} className="border-t-0 bg-muted/20 p-0 align-top">
                                   <div className="rounded-b-lg border-x border-b border-border/50 px-5 py-4 shadow-inner">
                                     <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                                       Observações

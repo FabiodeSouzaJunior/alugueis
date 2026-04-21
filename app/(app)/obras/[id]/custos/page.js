@@ -122,7 +122,7 @@ export default function ObraCustosPage() {
           <CardDescription>Ledger financeiro: Material e Mão de obra vêm dos cadastros próprios; aqui você adiciona apenas outros gastos (Ferramentas, Projeto, Taxas, Outros).</CardDescription>
           <div className="mt-4 flex flex-wrap gap-4">
             <Select value={filterCategory} onValueChange={setFilterCategory}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Categoria" />
               </SelectTrigger>
               <SelectContent>
@@ -164,7 +164,7 @@ export default function ObraCustosPage() {
               <p className="mb-4 text-sm font-medium text-muted-foreground">
                 Total (filtrado): <span className="font-semibold text-foreground">{formatCurrency(total)}</span>
               </p>
-              <Table>
+              <Table mobileCards>
                 <TableHeader>
                   <TableRow className="border-0 bg-muted/40 hover:bg-muted/40">
                     <TableHead className="h-11 px-4 py-3 font-semibold text-foreground">Data</TableHead>
@@ -177,8 +177,8 @@ export default function ObraCustosPage() {
                 </TableHeader>
                 <TableBody>
                   {filtered.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                    <TableRow data-mobile-detail="true">
+                      <TableCell data-mobile-full="true" colSpan={6} className="h-24 text-center text-muted-foreground">
                         Nenhum gasto encontrado.
                       </TableCell>
                     </TableRow>
@@ -187,12 +187,12 @@ export default function ObraCustosPage() {
                       const isLinked = c.referenceType === "material" || c.referenceType === "worker";
                       return (
                         <TableRow key={c.id}>
-                          <TableCell className="px-4 py-3 text-muted-foreground">{formatDate(c.date)}</TableCell>
-                          <TableCell className="px-4 py-3">{c.category}</TableCell>
-                          <TableCell className="max-w-[200px] truncate px-4 py-3" title={c.description ?? ""}>{c.description || "–"}</TableCell>
-                          <TableCell className="px-4 py-3 text-right tabular-nums font-medium text-red-600 dark:text-red-400">{formatCurrency(c.value)}</TableCell>
-                          <TableCell className="px-4 py-3 text-muted-foreground">{c.responsible || "–"}</TableCell>
-                          <TableCell className="px-4 py-3 text-right">
+                          <TableCell data-mobile-primary="true" className="px-4 py-3 text-muted-foreground">{formatDate(c.date)}</TableCell>
+                          <TableCell data-label="Categoria" className="px-4 py-3">{c.category}</TableCell>
+                          <TableCell data-label="Descricao" className="max-w-[200px] truncate px-4 py-3 max-sm:max-w-none max-sm:whitespace-normal" title={c.description ?? ""}>{c.description || "–"}</TableCell>
+                          <TableCell data-label="Valor" className="px-4 py-3 text-right tabular-nums font-medium text-red-600 dark:text-red-400">{formatCurrency(c.value)}</TableCell>
+                          <TableCell data-label="Responsavel" className="px-4 py-3 text-muted-foreground">{c.responsible || "–"}</TableCell>
+                          <TableCell data-mobile-actions="true" className="px-4 py-3 text-right">
                             {isLinked ? (
                               <Link href={c.referenceType === "material" ? `/obras/${id}/materiais` : `/obras/${id}/trabalhadores`}>
                                 <Button variant="outline" size="sm" className="gap-1">

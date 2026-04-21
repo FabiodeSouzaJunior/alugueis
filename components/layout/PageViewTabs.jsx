@@ -21,11 +21,15 @@ export function PageViewTabs({
   dashboardContent,
   insightsContent,
   extraTabs = [],
+  hideInsights = false,
   className,
 }) {
-  const views = extraTabs.length > 0
-    ? [...BASE_VIEWS, ...extraTabs.map((t) => ({ value: t.value, label: t.label }))]
+  const baseViews = hideInsights
+    ? BASE_VIEWS.filter((view) => view.value !== "insights")
     : BASE_VIEWS;
+  const views = extraTabs.length > 0
+    ? [...baseViews, ...extraTabs.map((t) => ({ value: t.value, label: t.label }))]
+    : baseViews;
   return (
     <div className={cn("space-y-6", className)}>
       <Tabs
@@ -35,8 +39,8 @@ export function PageViewTabs({
       >
         <TabsList
           className={cn(
-            "h-11 w-full max-w-md justify-start rounded-lg bg-transparent p-0 gap-0",
-            "border-b border-border"
+            "h-auto w-full max-w-full justify-start gap-0 overflow-x-auto rounded-lg bg-transparent p-0",
+            "border-b border-border scrollbar-hide sm:h-11 sm:max-w-md"
           )}
         >
           {views.map((view) => (
@@ -44,7 +48,7 @@ export function PageViewTabs({
               key={view.value}
               value={view.value}
               className={cn(
-                "relative rounded-none border-b-2 border-transparent bg-transparent px-5 py-2.5 text-sm font-medium text-muted-foreground shadow-none transition-all",
+                "relative shrink-0 rounded-none border-b-2 border-transparent bg-transparent px-4 py-2.5 text-sm font-medium text-muted-foreground shadow-none transition-all sm:px-5",
                 "hover:text-foreground data-[state=active]:border-primary data-[state=active]:text-foreground data-[state=active]:shadow-none"
               )}
             >

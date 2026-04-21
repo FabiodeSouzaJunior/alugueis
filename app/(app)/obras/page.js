@@ -480,7 +480,7 @@ export default function ObrasPage() {
               }
             />
           ) : (
-            <Table>
+            <Table mobileCards>
               <TableHeader>
                 <TableRow className="border-0 bg-muted/40 hover:bg-muted/40">
                   <TableHead className="h-11 px-4 py-3 font-semibold text-foreground">Nome</TableHead>
@@ -495,13 +495,13 @@ export default function ObrasPage() {
                 {
                   obras.map((o) => (
                     <TableRow key={o.id} className="transition-colors">
-                      <TableCell className="px-4 py-3 font-medium">{o.name}</TableCell>
-                      <TableCell className="px-4 py-3 text-muted-foreground">
+                      <TableCell data-mobile-primary="true" className="px-4 py-3 font-medium">{o.name}</TableCell>
+                      <TableCell data-label="Imovel" className="px-4 py-3 text-muted-foreground">
                         {propertyById[o.propertyId]?.name || "—"}
                       </TableCell>
-                      <TableCell className="px-4 py-3 text-right tabular-nums text-muted-foreground">{formatCurrency(o.budget)}</TableCell>
-                      <TableCell className="px-4 py-3 text-muted-foreground">{formatDate(o.startDate) || "–"}</TableCell>
-                      <TableCell className="px-4 py-3">
+                      <TableCell data-label="Orcamento" className="px-4 py-3 text-right tabular-nums text-muted-foreground">{formatCurrency(o.budget)}</TableCell>
+                      <TableCell data-label="Inicio" className="px-4 py-3 text-muted-foreground">{formatDate(o.startDate) || "–"}</TableCell>
+                      <TableCell data-label="Status" className="px-4 py-3">
                         <Badge
                           variant="outline"
                           className={cn(
@@ -513,7 +513,7 @@ export default function ObrasPage() {
                           {o.status === "ativa" ? "Ativa" : "Concluída"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="px-4 py-3 text-right">
+                      <TableCell data-mobile-actions="true" className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingObra(o); setDialogOpen(true); }} title="Editar">
                             <Pencil className="h-4 w-4" />
@@ -790,7 +790,7 @@ function ObraForm({ obra, properties, onSave, onCancel, saving }) {
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
         />
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="grid gap-2">
           <label className="text-sm font-medium">Data início</label>
           <input
@@ -836,7 +836,7 @@ function ObraForm({ obra, properties, onSave, onCancel, saving }) {
           </Select>
         </div>
       )}
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
         <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
         <Button type="submit" disabled={saving}>{saving ? "Salvando..." : "Salvar"}</Button>
       </div>

@@ -4,7 +4,7 @@ import { Building2, LayoutGrid, Users, TrendingUp } from "lucide-react";
 import { StatsCard } from "@/components/reports/StatsCard";
 import { ChartCard } from "@/components/cards/ChartCard";
 import { AdvancedBarChart } from "@/components/charts/AdvancedBarChart";
-import { accentCardClasses, dataColors } from "@/lib/chartColors";
+import { dataColors } from "@/lib/chartColors";
 import { formatCurrency } from "@/lib/utils";
 
 export function PropertiesDashboard({ dashboard, loading }) {
@@ -80,50 +80,6 @@ export function PropertiesDashboard({ dashboard, loading }) {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <ChartCard
-          title="Valorização do imóvel"
-          description="Valor estimado por imóvel"
-          accent="property"
-        >
-          {charts?.valuation?.length > 0 ? (
-            <AdvancedBarChart
-              data={charts.valuation}
-              xAxisKey="name"
-              series={[{ dataKey: "value", name: "Valor estimado", color: dataColors.revenue }]}
-              formatValue={formatCurrency}
-              height={260}
-              yAxisFormatter={(v) => (v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${v}`)}
-              emptyMessage="Nenhum valor estimado"
-            />
-          ) : (
-            <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
-              Nenhum dado. Informe valor estimado nos imóveis.
-            </div>
-          )}
-        </ChartCard>
-
-        <ChartCard
-          title="Receita por imóvel"
-          description="Pagamentos recebidos por imóvel (inquilinos vinculados)"
-          accent="revenue"
-        >
-          {charts?.revenueByProperty?.length > 0 ? (
-            <AdvancedBarChart
-              data={charts.revenueByProperty}
-              xAxisKey="name"
-              series={[{ dataKey: "total", name: "Receita", color: dataColors.revenue }]}
-              formatValue={formatCurrency}
-              height={260}
-              yAxisFormatter={(v) => (v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${v}`)}
-              emptyMessage="Nenhuma receita"
-            />
-          ) : (
-            <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
-              Vincule inquilinos aos imóveis para ver receita por imóvel.
-            </div>
-          )}
-        </ChartCard>
-
-        <ChartCard
           title="Gasto em obras por imóvel"
           description="Soma de custos das obras vinculadas ao imóvel"
           accent="expense"
@@ -166,7 +122,6 @@ export function PropertiesDashboard({ dashboard, loading }) {
             </div>
           )}
         </ChartCard>
-
       </div>
 
       <ChartCard
@@ -179,7 +134,7 @@ export function PropertiesDashboard({ dashboard, loading }) {
             data={charts.payoffMonthsByProperty.filter((x) => x.months != null)}
             xAxisKey="name"
             series={[{ dataKey: "months", name: "Meses p/ quitar", color: dataColors.warning }]}
-            formatValue={(v) => `${Number(v)} мес`}
+            formatValue={(v) => `${Number(v)} meses`}
             height={280}
             yAxisFormatter={(v) => `${v}`}
             emptyMessage="Sem dados (precisa de aluguel > 0)"
@@ -190,6 +145,52 @@ export function PropertiesDashboard({ dashboard, loading }) {
           </div>
         )}
       </ChartCard>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <ChartCard
+          title="Valorização do imóvel"
+          description="Valor estimado por imóvel"
+          accent="property"
+        >
+          {charts?.valuation?.length > 0 ? (
+            <AdvancedBarChart
+              data={charts.valuation}
+              xAxisKey="name"
+              series={[{ dataKey: "value", name: "Valor estimado", color: dataColors.revenue }]}
+              formatValue={formatCurrency}
+              height={260}
+              yAxisFormatter={(v) => (v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${v}`)}
+              emptyMessage="Nenhum valor estimado"
+            />
+          ) : (
+            <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
+              Nenhum dado. Informe valor estimado nos imóveis.
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="Receita por imóvel"
+          description="Pagamentos recebidos por imóvel (inquilinos vinculados)"
+          accent="revenue"
+        >
+          {charts?.revenueByProperty?.length > 0 ? (
+            <AdvancedBarChart
+              data={charts.revenueByProperty}
+              xAxisKey="name"
+              series={[{ dataKey: "total", name: "Receita", color: dataColors.revenue }]}
+              formatValue={formatCurrency}
+              height={260}
+              yAxisFormatter={(v) => (v >= 1000 ? `R$ ${(v / 1000).toFixed(0)}k` : `R$ ${v}`)}
+              emptyMessage="Nenhuma receita"
+            />
+          ) : (
+            <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
+              Vincule inquilinos aos imóveis para ver receita por imóvel.
+            </div>
+          )}
+        </ChartCard>
+      </div>
     </section>
   );
 }

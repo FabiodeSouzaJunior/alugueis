@@ -86,7 +86,7 @@ export function ObraStageForm({ stage, onSave, onCancel, saving }) {
           </SelectContent>
         </Select>
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div className="grid gap-2">
           <Label>Data início</Label>
           <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />

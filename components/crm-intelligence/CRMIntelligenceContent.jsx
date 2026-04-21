@@ -16,7 +16,6 @@ import { TenantSatisfactionAnalytics } from "./TenantSatisfactionAnalytics";
 import { DemandAndVacancyCharts } from "./DemandAndVacancyCharts";
 import { RentPriceIntelligence } from "./RentPriceIntelligence";
 import { TenantFeedbackInsights } from "./TenantFeedbackInsights";
-import { CRMIntelligenceAlerts } from "./CRMIntelligenceAlerts";
 import { ExitReasonsChart } from "./ExitReasonsChart";
 import { TenantRetentionMetrics } from "./TenantRetentionMetrics";
 import { TenantProfilePanel } from "./TenantProfilePanel";
@@ -92,8 +91,8 @@ export function CRMIntelligenceContent() {
   if (loading) {
     return (
       <div className="space-y-8">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="h-32 animate-pulse rounded-xl border border-border bg-muted/30" />
           ))}
         </div>
@@ -117,17 +116,8 @@ export function CRMIntelligenceContent() {
           occupied={overview?.occupied ?? 0}
           occupancyRate={overview?.occupancyRate ?? 0}
           avgTenureMonths={overview?.avgTenureMonths ?? 0}
-          renewalRate={overview?.renewalRate ?? 0}
           exitsThisMonth={overview?.exitsThisMonth ?? 0}
-          newThisMonth={overview?.newThisMonth ?? 0}
         />
-      </section>
-
-      <section>
-        <h2 className="mb-4 text-lg font-semibold tracking-tight text-foreground">
-          Alertas inteligentes
-        </h2>
-        <CRMIntelligenceAlerts alerts={overview?.alerts ?? []} />
       </section>
 
       <section>

@@ -3,7 +3,7 @@
 import { User, Hash } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function TopDebtorsList({ items = [], formatCurrency }) {
+export function TopDebtorsList({ items = [], formatCurrency, metric = "amount" }) {
   if (!items?.length) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/20 py-12 text-center">
@@ -36,9 +36,23 @@ export function TopDebtorsList({ items = [], formatCurrency }) {
               </div>
             </div>
           </div>
-          <span className="shrink-0 text-right font-bold tabular-nums text-red-600 dark:text-red-400">
-            {formatCurrency(item.totalPendente)}
-          </span>
+          <div className="shrink-0 text-right">
+            {metric === "installments" ? (
+              <>
+                <span className="block font-bold tabular-nums text-red-600 dark:text-red-400">
+                  {item.parcelasEmAberto ?? 0}{" "}
+                  {item.parcelasEmAberto === 1 ? "parcela" : "parcelas"}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {formatCurrency(item.totalPendente)}
+                </span>
+              </>
+            ) : (
+              <span className="font-bold tabular-nums text-red-600 dark:text-red-400">
+                {formatCurrency(item.totalPendente)}
+              </span>
+            )}
+          </div>
         </li>
       ))}
     </ul>

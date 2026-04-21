@@ -183,7 +183,7 @@ export default function ManutencaoPage() {
           ) : loading ? (
             <p className="py-8 text-center text-muted-foreground">Carregando...</p>
           ) : (
-          <Table>
+          <Table mobileCards>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10" aria-label="Expandir" />
@@ -199,8 +199,8 @@ export default function ManutencaoPage() {
             </TableHeader>
             <TableBody>
               {tasks.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                <TableRow data-mobile-detail="true">
+                  <TableCell data-mobile-full="true" colSpan={9} className="h-24 text-center text-muted-foreground">
                     Nenhuma tarefa cadastrada.
                   </TableCell>
                 </TableRow>
@@ -214,7 +214,7 @@ export default function ManutencaoPage() {
                       )}
                       onClick={() => setExpandedId(expandedId === t.id ? null : t.id)}
                     >
-                      <TableCell className="w-10 py-3 align-middle">
+                      <TableCell data-mobile-full="true" className="w-10 py-3 align-middle">
                         <span className="inline-flex text-muted-foreground">
                           {expandedId === t.id ? (
                             <ChevronDown className="h-4 w-4" />
@@ -223,13 +223,13 @@ export default function ManutencaoPage() {
                           )}
                         </span>
                       </TableCell>
-                      <TableCell className="font-medium">{t.type}</TableCell>
-                      <TableCell>{t.location}</TableCell>
-                      <TableCell className="max-w-[200px] truncate">{t.description || "-"}</TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                      <TableCell data-mobile-primary="true" className="font-medium">{t.type}</TableCell>
+                      <TableCell data-label="Local">{t.location}</TableCell>
+                      <TableCell data-label="Descricao" className="max-w-[200px] truncate max-sm:max-w-none max-sm:whitespace-normal">{t.description || "-"}</TableCell>
+                      <TableCell data-label="Valor gasto" className="text-right tabular-nums text-muted-foreground">
                         {formatCurrency(Number(t.spentValue) || 0)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell data-label="Prioridade">
                         <Badge
                           variant={
                             t.priority === "alta"
@@ -249,7 +249,7 @@ export default function ManutencaoPage() {
                           {priorityLabel[t.priority] || t.priority}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell data-label="Status">
                         <Badge
                           variant={
                             t.status === "concluido"
@@ -269,10 +269,10 @@ export default function ManutencaoPage() {
                           {statusLabel[t.status] || t.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell data-label="Data" className="text-muted-foreground">
                         {formatDate(t.createdAt)}
                       </TableCell>
-                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <TableCell data-mobile-actions="true" className="text-right" onClick={(e) => e.stopPropagation()}>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -287,8 +287,8 @@ export default function ManutencaoPage() {
                       </TableCell>
                     </TableRow>
                     {expandedId === t.id && (
-                      <TableRow className="hover:bg-transparent">
-                        <TableCell colSpan={9} className="border-t-0 bg-muted/20 p-0 align-top">
+                      <TableRow data-mobile-detail="true" className="hover:bg-transparent">
+                        <TableCell data-mobile-full="true" colSpan={9} className="border-t-0 bg-muted/20 p-0 align-top">
                           <div className="rounded-b-lg border-x border-b border-border/50 px-5 py-4 shadow-inner">
                             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                               <div className="min-w-0 flex-1">

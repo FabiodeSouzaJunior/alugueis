@@ -176,8 +176,8 @@ export function PropertyUnitsSection({
       ) : null}
 
       {(units.length > 0 || adding) && (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <Table className="min-w-[600px] text-sm">
+        <div className="overflow-visible rounded-md border border-border">
+          <Table mobileCards className="min-w-[600px] text-sm">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-28">Identificador</TableHead>
@@ -194,17 +194,17 @@ export function PropertyUnitsSection({
                   <TableRow key={u.id}>
                     {editingId === u.id ? (
                       <>
-                        <TableCell>
-                          <Input placeholder="Ex: 101" value={form.unitLabel} onChange={(e) => setForm((p) => ({ ...p, unitLabel: e.target.value }))} className="h-8 w-24" />
+                        <TableCell data-label="Identificador">
+                          <Input placeholder="Ex: 101" value={form.unitLabel} onChange={(e) => setForm((p) => ({ ...p, unitLabel: e.target.value }))} className="h-8 w-full sm:w-24" />
                         </TableCell>
-                        <TableCell>
-                          <Input type="number" min={0} step="0.01" placeholder="0,00" value={form.rentPrice} onChange={(e) => setForm((p) => ({ ...p, rentPrice: e.target.value }))} className="h-8 w-28" />
+                        <TableCell data-label="Aluguel">
+                          <Input type="number" min={0} step="0.01" placeholder="0,00" value={form.rentPrice} onChange={(e) => setForm((p) => ({ ...p, rentPrice: e.target.value }))} className="h-8 w-full sm:w-28" />
                         </TableCell>
-                        <TableCell>
-                          <Input type="number" min={0} placeholder="0" value={form.maxPeople} onChange={(e) => setForm((p) => ({ ...p, maxPeople: e.target.value }))} className="h-8 w-20" />
+                        <TableCell data-label="Max. pessoas">
+                          <Input type="number" min={0} placeholder="0" value={form.maxPeople} onChange={(e) => setForm((p) => ({ ...p, maxPeople: e.target.value }))} className="h-8 w-full sm:w-20" />
                         </TableCell>
-                        <TableCell colSpan={2} />
-                        <TableCell className="text-right">
+                        <TableCell data-mobile-hidden="true" colSpan={2} />
+                        <TableCell data-mobile-actions="true" className="text-right">
                           <div className="flex justify-end gap-1">
                             <Button type="button" size="icon" className="h-7 w-7" onClick={() => handleEdit(u)} disabled={saving} title="Salvar">
                               <Check className="h-3.5 w-3.5" />
@@ -217,12 +217,12 @@ export function PropertyUnitsSection({
                       </>
                     ) : (
                       <>
-                        <TableCell className="font-medium">{u.unitLabel || "—"}</TableCell>
-                        <TableCell className="tabular-nums">{u.rentPrice != null ? formatCurrency(u.rentPrice) : "—"}</TableCell>
-                        <TableCell>{u.maxPeople != null ? u.maxPeople : "—"}</TableCell>
-                        <TableCell>{u.tenantName || <span className="text-muted-foreground">—</span>}</TableCell>
-                        <TableCell>{u.residentName || <span className="text-muted-foreground">—</span>}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell data-mobile-primary="true" className="font-medium">{u.unitLabel || "—"}</TableCell>
+                        <TableCell data-label="Aluguel" className="tabular-nums">{u.rentPrice != null ? formatCurrency(u.rentPrice) : "—"}</TableCell>
+                        <TableCell data-label="Max. pessoas">{u.maxPeople != null ? u.maxPeople : "—"}</TableCell>
+                        <TableCell data-label="Responsavel">{u.tenantName || <span className="text-muted-foreground">—</span>}</TableCell>
+                        <TableCell data-label="Quem mora">{u.residentName || <span className="text-muted-foreground">—</span>}</TableCell>
+                        <TableCell data-mobile-actions="true" className="text-right">
                           <div className="flex justify-end gap-1">
                             <Button type="button" size="icon" variant="ghost" className="h-7 w-7" title="Registrar responsável / quem mora" onClick={() => startRegistering(u)}>
                               <UserPlus className="h-3.5 w-3.5" />
@@ -240,15 +240,15 @@ export function PropertyUnitsSection({
                   </TableRow>
 
                   {registeringId === u.id && (
-                    <TableRow key={`${u.id}-registering`} className="bg-muted/30 hover:bg-muted/30">
-                      <TableCell colSpan={6} className="pb-3 pt-2">
+                    <TableRow key={`${u.id}-registering`} data-mobile-detail="true" className="bg-muted/30 hover:bg-muted/30">
+                      <TableCell data-mobile-full="true" colSpan={6} className="pb-3 pt-2">
                         <div className="space-y-2">
                           <p className="text-xs font-medium text-muted-foreground">
                             Registrar responsável e quem mora — {u.unitLabel || "esta unidade"}
                           </p>
                           <div className="flex flex-wrap gap-2">
                             <Select value={residentForm.tenantId || "none"} onValueChange={(v) => setResidentForm((p) => ({ ...p, tenantId: v === "none" ? "" : v }))}>
-                              <SelectTrigger className="h-8 w-[200px]">
+                              <SelectTrigger className="h-8 w-full sm:w-[200px]">
                                 <SelectValue placeholder="Responsável pelo pagamento" />
                               </SelectTrigger>
                               <SelectContent>
@@ -259,7 +259,7 @@ export function PropertyUnitsSection({
                               </SelectContent>
                             </Select>
                             <Select value={residentForm.residentTenantId || "none"} onValueChange={(v) => setResidentForm((p) => ({ ...p, residentTenantId: v === "none" ? "" : v }))}>
-                              <SelectTrigger className="h-8 w-[200px]">
+                              <SelectTrigger className="h-8 w-full sm:w-[200px]">
                                 <SelectValue placeholder="Quem mora na unidade" />
                               </SelectTrigger>
                               <SelectContent>
@@ -285,19 +285,19 @@ export function PropertyUnitsSection({
 
               {adding && (
                 <TableRow className="bg-muted/20 hover:bg-muted/20">
-                  <TableCell>
-                    <Input placeholder="Ex: 101" value={form.unitLabel} onChange={(e) => setForm((p) => ({ ...p, unitLabel: e.target.value }))} className="h-8 w-24" />
+                  <TableCell data-label="Identificador">
+                    <Input placeholder="Ex: 101" value={form.unitLabel} onChange={(e) => setForm((p) => ({ ...p, unitLabel: e.target.value }))} className="h-8 w-full sm:w-24" />
                   </TableCell>
-                  <TableCell>
-                    <Input type="number" min={0} step="0.01" placeholder="0,00" value={form.rentPrice} onChange={(e) => setForm((p) => ({ ...p, rentPrice: e.target.value }))} className="h-8 w-28" />
+                  <TableCell data-label="Aluguel">
+                    <Input type="number" min={0} step="0.01" placeholder="0,00" value={form.rentPrice} onChange={(e) => setForm((p) => ({ ...p, rentPrice: e.target.value }))} className="h-8 w-full sm:w-28" />
                   </TableCell>
-                  <TableCell>
-                    <Input type="number" min={0} placeholder="0" value={form.maxPeople} onChange={(e) => setForm((p) => ({ ...p, maxPeople: e.target.value }))} className="h-8 w-20" />
+                  <TableCell data-label="Max. pessoas">
+                    <Input type="number" min={0} placeholder="0" value={form.maxPeople} onChange={(e) => setForm((p) => ({ ...p, maxPeople: e.target.value }))} className="h-8 w-full sm:w-20" />
                   </TableCell>
-                  <TableCell colSpan={2} className="text-xs text-muted-foreground italic">
+                  <TableCell data-mobile-full="true" colSpan={2} className="text-xs text-muted-foreground italic">
                     Responsável e morador podem ser registrados após salvar.
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell data-mobile-actions="true" className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button type="button" size="icon" className="h-7 w-7" onClick={handleAdd} disabled={saving} title="Registrar unidade">
                         <Check className="h-3.5 w-3.5" />

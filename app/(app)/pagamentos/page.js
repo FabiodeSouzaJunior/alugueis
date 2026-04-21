@@ -51,22 +51,18 @@ import {
   fetchCondominiumSettings,
   fetchCondominiumOverview,
 } from "@/lib/api";
-import { getPendingAmount, getCurrentMonthYear } from "@/lib/calculations";
+import { getCurrentMonthYear, getPaymentRowData } from "@/lib/calculations";
 import {
   Plus,
   Pencil,
   Search,
   MousePointerClick,
-  BarChart3,
-  TrendingUp,
-  Wallet,
   ChevronLeft,
   ChevronRight,
   Sparkles,
 } from "lucide-react";
 import { usePageHeader } from "@/context/page-header";
 import { PageViewTabs } from "@/components/layout/PageViewTabs";
-import { InsightCard } from "@/components/ui/insight-card";
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => ({
   value: i + 1,
@@ -102,7 +98,7 @@ function PagamentosContent() {
   const [expandedTenantId, setExpandedTenantId] = useState(null);
   const [tenantHistoryById, setTenantHistoryById] = useState({});
   const [loadingTenantHistoryId, setLoadingTenantHistoryId] = useState(null);
-  const [condominiumByProperty, setCondominiumByProperty] = useState({});
+  const [, setCondominiumByProperty] = useState({});
   // condominiumByProperty = { [propertyId]: { chargeWithRent: bool, byPeriod: { "year-month": amount } } }
   const [activeView, setActiveView] = useState("tabela");
 
@@ -363,7 +359,10 @@ function PagamentosContent() {
     return () => setPageHeader({ title: null, description: null, action: null });
   }, [setPageHeader, dialogOpen, editingPayment, saveError, tenants, properties, allPayments, saving, handleSave]);
 
-  const byTenant = Object.fromEntries(tenants.map((t) => [t.id, t]));
+  const byTenant = useMemo(
+    () => Object.fromEntries(tenants.map((t) => [t.id, t])),
+    [tenants]
+  );
   const kitnets = [...new Set(tenants.map((t) => t.kitnetNumber).filter(Boolean))].sort();
   const propertyOptions = useMemo(() => {
     const byProperty = Object.fromEntries(
@@ -388,38 +387,35 @@ function PagamentosContent() {
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [properties, tenants]);
 
-  const getValorDevido = (p) => Number(p.expectedAmount) || Number(p.amount) || 0;
+  const getValorDevido = useCallback(
+    (p) => {
+      const tenantRent = Number(byTenant[p.tenantId]?.rentValue);
+      const expectedAmount = Number(p.expectedAmount);
+      const paidAmount = Number(p.amount);
+      const candidates = [tenantRent, expectedAmount, paidAmount].filter(
+        (value) => Number.isFinite(value) && value > 0
+      );
+      return candidates.length ? Math.max(...candidates) : 0;
+    },
+    [byTenant]
+  );
 
-  /** Status para listagem/expandido: usa valor devido do inquilino para que parciais fiquem em Pendentes, parciais e atrasados. */
-  const getStatusPagamentos = (p) => {
-    const valorDevido = getValorDevido(p);
-    const valorPago = Number(p.amount) || 0;
-    const today = new Date().toISOString().split("T")[0];
-    if (valorPago >= valorDevido && valorDevido > 0) return "pago";
-    if (valorPago > 0 && valorPago < valorDevido) return "pendente";
-    if (valorPago === 0) return (p.dueDate || "") < today ? "atrasado" : "pendente";
-    return "pendente";
-  };
+  const getPaymentDisplayData = useCallback(
+    (payment) => getPaymentRowData(payment, getValorDevido(payment)),
+    [getValorDevido]
+  );
 
-  /** Status na tabela expandida: apenas valorPago vs valorDevido (sem datas). */
-  const getStatusExpandido = (valorDevido, valorPago) => {
-    const vD = Number(valorDevido) || 0;
-    const vP = Number(valorPago) || 0;
-    if (vP === vD) return "Pago";
-    if (vP === 0) return "Atrasado";
-    if (vP > 0 && vP < vD) return "Pendente";
+  /** Status para listagem, analytics e expandido usando a mesma regra central do backend. */
+  const getStatusPagamentos = useCallback(
+    (p) => getPaymentDisplayData(p).status,
+    [getPaymentDisplayData]
+  );
+
+  const getStatusLabel = (status) => {
+    if (status === "pago") return "Pago";
+    if (status === "atrasado") return "Atrasado";
     return "Pendente";
   };
-
-  const paymentsWithStatus = useMemo(() => {
-    const by = Object.fromEntries(tenants.map((t) => [t.id, t]));
-    return payments.map((p) => ({
-      ...p,
-      status: getStatusPagamentos(p),
-      tenantName: by[p.tenantId]?.name || "-",
-      kitnetNumber: by[p.tenantId]?.kitnetNumber || "-",
-    }));
-  }, [payments, tenants]);
 
   const getTenantPayments = useCallback(
     (tenantId) => {
@@ -441,7 +437,7 @@ function PagamentosContent() {
           return (b.dueDate || "").localeCompare(a.dueDate || "");
         });
     },
-    [byTenant, tenantHistoryById]
+    [byTenant, tenantHistoryById, getStatusPagamentos]
   );
 
   let filtered = payments.map((p) => ({
@@ -491,17 +487,28 @@ function PagamentosContent() {
     );
 
     // openCount usa todos os pagamentos (todos os períodos) para refletir meses em atraso históricos
-    const today = new Date().toISOString().split("T")[0];
-    const openCountByTenant = {};
+    const summaryByTenant = {};
     allPayments.forEach((p) => {
-      const valorDevido = Number(p.expectedAmount) || Number(p.amount) || 0;
-      const valorPago = Number(p.amount) || 0;
-      let st;
-      if (valorPago >= valorDevido && valorDevido > 0) st = "pago";
-      else if (valorPago === 0) st = (p.dueDate || "") < today ? "atrasado" : "pendente";
-      else st = "pendente";
+      const tenantId = String(p.tenantId ?? "");
+      if (!tenantId) return;
+      const st = getStatusPagamentos(p);
+      if (!summaryByTenant[tenantId]) {
+        summaryByTenant[tenantId] = {
+          overdueCount: 0,
+          pendingCount: 0,
+          openCount: 0,
+          totalCount: 0,
+        };
+      }
+      summaryByTenant[tenantId].totalCount += 1;
       if (st === "atrasado" || st === "pendente") {
-        openCountByTenant[p.tenantId] = (openCountByTenant[p.tenantId] || 0) + 1;
+        summaryByTenant[tenantId].openCount += 1;
+      }
+      if (st === "atrasado") {
+        summaryByTenant[tenantId].overdueCount += 1;
+      }
+      if (st === "pendente") {
+        summaryByTenant[tenantId].pendingCount += 1;
       }
     });
 
@@ -549,25 +556,35 @@ function PagamentosContent() {
           const latestPayment = payments[0] || null;
           const overdueCount = payments.filter((p) => p.status === "atrasado").length;
           const pendingCount = payments.filter((p) => p.status === "pendente").length;
-          const summaryStatus =
-            overdueCount > 0 ? "atrasado" : pendingCount > 0 ? "pendente" : "pago";
+          const fullSummary = summaryByTenant[String(tenantGroup.tenantId)] || null;
+          const summaryStatus = fullSummary
+            ? fullSummary.overdueCount > 0
+              ? "atrasado"
+              : fullSummary.pendingCount > 0
+                ? "pendente"
+                : "pago"
+            : overdueCount > 0
+              ? "atrasado"
+              : pendingCount > 0
+                ? "pendente"
+                : "pago";
           return {
             tenantId: tenantGroup.tenantId,
             tenantName: tenantGroup.tenantName,
             kitnetNumber: tenantGroup.kitnetNumber,
             payments,
             totalPeriods: payments.length,
-            openCount: openCountByTenant[tenantGroup.tenantId] || 0,
+            openCount: fullSummary?.openCount ?? overdueCount + pendingCount,
             latestPayment,
             summaryStatus,
           };
         })
         .sort((a, b) => a.tenantName.localeCompare(b.tenantName, "pt-BR")),
     }));
-  }, [filtered, allPayments, properties, byTenant]);
+  }, [filtered, allPayments, properties, byTenant, getStatusPagamentos]);
 
   const yearOptions = useMemo(() => {
-    const years = (payments || [])
+    const years = (allPayments || [])
       .map((p) => Number(p.year))
       .filter((y) => !isNaN(y));
     const cy = new Date().getFullYear();
@@ -584,32 +601,19 @@ function PagamentosContent() {
     }
 
     return Array.from({ length: max - min + 1 }, (_, i) => min + i);
-  }, [payments]);
+  }, [allPayments]);
 
   const analyticsData = useMemo(() => {
     const byTenant = Object.fromEntries(tenants.map((t) => [t.id, t]));
-    const getValorDevido = (p) => Number(p.expectedAmount) || Number(p.amount) || 0;
-    const getStatus = (p) => {
-      const valorDevido = getValorDevido(p);
-      const valorPago = Number(p.amount) || 0;
-      const today = new Date().toISOString().split("T")[0];
-      if (valorPago >= valorDevido && valorDevido > 0) return "pago";
-      if (valorPago > 0 && valorPago < valorDevido) return "pendente";
-      if (valorPago === 0) return (p.dueDate || "") < today ? "atrasado" : "pendente";
-      return "pendente";
-    };
 
-    const rows = filtered.map((p) => {
-      const valorDevido = getValorDevido(p);
-      const valorPago = Number(p.amount) || 0;
-      const pendente = Math.max(0, valorDevido - valorPago);
-      const status = getStatus(p);
+    const rows = payments.map((p) => {
+      const row = getPaymentDisplayData(p);
       return {
         ...p,
-        valorDevido,
-        valorPago,
-        pendente,
-        status,
+        valorDevido: row.valorDevido,
+        valorPago: row.valorPago,
+        pendente: row.pendente,
+        status: row.status,
         tenantName: byTenant[p.tenantId]?.name ?? "-",
         kitnetNumber: byTenant[p.tenantId]?.kitnetNumber ?? "-",
       };
@@ -665,26 +669,12 @@ function PagamentosContent() {
     });
 
     const valorAberto = totalPendente + totalAtrasado;
-    // top5 calculado sobre TODOS os pagamentos (independente do mês selecionado)
-    const allRows = allPayments.map((p) => {
-      const valorDevido = getValorDevido(p);
-      const valorPago = Number(p.amount) || 0;
-      const pendente = Math.max(0, valorDevido - valorPago);
-      return {
-        ...p,
-        valorDevido,
-        valorPago,
-        pendente,
-        tenantName: byTenant[p.tenantId]?.name ?? "-",
-        kitnetNumber: byTenant[p.tenantId]?.kitnetNumber ?? "-",
-      };
-    });
-    const byTenantDebtAll = {};
-    allRows.forEach((r) => {
+    const byTenantDebt = {};
+    rows.forEach((r) => {
       if (r.pendente <= 0) return;
       const id = r.tenantId;
-      if (!byTenantDebtAll[id]) {
-        byTenantDebtAll[id] = {
+      if (!byTenantDebt[id]) {
+        byTenantDebt[id] = {
           tenantId: id,
           tenantName: r.tenantName,
           kitnetNumber: r.kitnetNumber,
@@ -692,10 +682,10 @@ function PagamentosContent() {
           parcelasEmAberto: 0,
         };
       }
-      byTenantDebtAll[id].totalPendente += r.pendente;
-      byTenantDebtAll[id].parcelasEmAberto += 1;
+      byTenantDebt[id].totalPendente += r.pendente;
+      byTenantDebt[id].parcelasEmAberto += 1;
     });
-    const top5 = Object.values(byTenantDebtAll)
+    const top5 = Object.values(byTenantDebt)
       .sort((a, b) => b.totalPendente - a.totalPendente)
       .slice(0, 5);
 
@@ -713,20 +703,14 @@ function PagamentosContent() {
       top5,
     };
   }, [
-    filtered,
-    allPayments,
+    payments,
     tenants,
-    condominiumByProperty,
-    reportMonth,
-    reportYear,
-    filterKitnet,
-    filterTenantId,
-    search,
+    getPaymentDisplayData,
   ]);
 
   return (
     <div className="space-y-6">
-      {activeView !== "tabela" && (
+      {activeView === "dashboard" && (
       <section className="period-hero-shell relative isolate overflow-hidden rounded-[2rem] border p-[1px] shadow-sm">
         <div
           className="pointer-events-none absolute inset-0 overflow-hidden rounded-[2rem]"
@@ -845,19 +829,20 @@ function PagamentosContent() {
       <PageViewTabs
         value={activeView}
         onValueChange={setActiveView}
+        hideInsights
         tabelaContent={
       <Card className="rounded-lg border border-border">
         <CardHeader>
           <CardTitle>Listagem</CardTitle>
           <CardDescription>Filtros e busca</CardDescription>
-          <div className="mb-20 mt-3 flex items-center gap-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3 pb-4">
+          <div className="mb-4 mt-3 flex flex-col items-start gap-2 rounded-lg border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3 pb-4 sm:mb-20 sm:flex-row sm:items-center sm:gap-3">
             <MousePointerClick className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-500" />
             <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
               Clique na linha do inquilino para abrir todos os pagamentos dele.
             </p>
           </div>
           <div className="mt-4 flex flex-wrap gap-4">
-            <div className="relative max-w-xs flex-1">
+            <div className="relative w-full sm:max-w-xs sm:flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Buscar por inquilino ou kitnet..."
@@ -867,7 +852,7 @@ function PagamentosContent() {
               />
             </div>
             <Select value={filterKitnet || "__all__"} onValueChange={setFilterKitnet}>
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-full sm:w-[140px]">
                 <SelectValue placeholder="Todas kitnets" />
               </SelectTrigger>
               <SelectContent>
@@ -880,7 +865,7 @@ function PagamentosContent() {
               </SelectContent>
             </Select>
             <Select value={filterPropertyId || "__all__"} onValueChange={setFilterPropertyId}>
-              <SelectTrigger className="w-[220px]">
+              <SelectTrigger className="w-full sm:w-[220px]">
                 <SelectValue placeholder="Todos imóveis" />
               </SelectTrigger>
               <SelectContent>
@@ -910,11 +895,11 @@ function PagamentosContent() {
           <div className="space-y-8">
           {groupedByProperty.map((group) => (
             <div key={group.key} className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                 <h3 className="text-base font-semibold tracking-tight">{group.propertyName}</h3>
                 <span className="text-xs text-muted-foreground">{group.items.length} inquilino(s)</span>
               </div>
-              <Table>
+              <Table mobileCards>
             <TableHeader>
               <TableRow>
                 <TableHead>Inquilino</TableHead>
@@ -952,18 +937,18 @@ function PagamentosContent() {
                           }
                         }}
                       >
-                        <TableCell className="font-medium">{tenantRow.tenantName}</TableCell>
-                        <TableCell>{tenantRow.kitnetNumber}</TableCell>
-                        <TableCell>{tenantRow.totalPeriods}</TableCell>
-                        <TableCell>
+                        <TableCell data-mobile-primary="true" className="font-medium">{tenantRow.tenantName}</TableCell>
+                        <TableCell data-label="Kitnet">{tenantRow.kitnetNumber}</TableCell>
+                        <TableCell data-label="Periodos">{tenantRow.totalPeriods}</TableCell>
+                        <TableCell data-label="Em aberto">
                           {tenantRow.openCount > 0 ? (
                             <span className="font-semibold text-red-600 dark:text-red-400">{tenantRow.openCount} mes(es)</span>
                           ) : (
                             <span className="text-emerald-600 dark:text-emerald-400">Nenhum</span>
                           )}
                         </TableCell>
-                        <TableCell>{latestPeriod}</TableCell>
-                        <TableCell>
+                        <TableCell data-label="Ultimo periodo">{latestPeriod}</TableCell>
+                        <TableCell data-label="Status">
                           <Badge className={badgeClass}>
                             {tenantRow.summaryStatus === "pago"
                               ? "Pago"
@@ -974,8 +959,8 @@ function PagamentosContent() {
                         </TableCell>
                       </TableRow>
                       {isExpanded && (
-                        <TableRow>
-                          <TableCell colSpan={6} className="bg-muted/30 p-0 align-top">
+                        <TableRow data-mobile-detail="true">
+                          <TableCell data-mobile-full="true" colSpan={6} className="bg-muted/30 p-0 align-top">
                             <div className="space-y-3 p-4">
                               {loadingTenantHistoryId === tenantRow.tenantId && (
                                 <p className="text-sm text-muted-foreground">
@@ -1003,10 +988,11 @@ function PagamentosContent() {
                                     </thead>
                                     <tbody>
                                       {tenantPayments.map((pay) => {
-                                        const valorDevido = Number(pay.expectedAmount) || Number(pay.amount) || 0;
-                                        const valorPago = Number(pay.amount) || 0;
-                                        const pend = Math.max(0, valorDevido - valorPago);
-                                        const statusExpandido = getStatusExpandido(valorDevido, valorPago);
+                                        const row = getPaymentDisplayData(pay);
+                                        const valorDevido = row.valorDevido;
+                                        const valorPago = row.valorPago;
+                                        const pend = row.pendente;
+                                        const statusExpandido = getStatusLabel(row.status);
                                         const badgeClass =
                                           statusExpandido === "Pago"
                                             ? "bg-emerald-500/20 text-emerald-700 dark:bg-emerald-500/25 dark:text-emerald-300 border-emerald-500/30"
@@ -1151,31 +1137,6 @@ function PagamentosContent() {
               />
             </CardContent>
           </Card>
-        </section>
-      ) : null}
-        insightsContent={!loading && !loadError ? (
-        <section className="space-y-6">
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">
-            Insights
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <InsightCard icon={Wallet} title="Receita" accent="revenue">
-              Total recebido de <strong>{formatCurrency(analyticsData.totalRecebido)}</strong> em pagamentos.
-              Receita prevista no período: <strong>{formatCurrency(analyticsData.receitaPrevista)}</strong>.
-            </InsightCard>
-            <InsightCard icon={BarChart3} title="Adimplência" accent="revenue">
-              Taxa de adimplência atual: <strong>{analyticsData.taxaAdimplencia.toFixed(1)}%</strong>.
-              {analyticsData.totalPagamentos > 0 && (
-                <> {analyticsData.totalPagamentos} pagamento(s) registrado(s).</>
-              )}
-            </InsightCard>
-            <InsightCard icon={TrendingUp} title="Valores em aberto" accent="warning">
-              Valor total pendente: <strong>{formatCurrency(analyticsData.totalPendente + analyticsData.totalAtrasado)}</strong>.
-              {analyticsData.top5?.length > 0 && (
-                <> Os maiores débitos estão entre os {analyticsData.top5.length} inquilinos listados no dashboard.</>
-              )}
-            </InsightCard>
-          </div>
         </section>
       ) : null}
         extraTabs={[{

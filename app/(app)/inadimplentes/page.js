@@ -24,8 +24,6 @@ import {
   fetchTenantPaymentHistory,
   fetchTenants,
   updatePayment,
-  fetchCondominiumSettings,
-  fetchCondominiumOverview,
 } from "@/lib/api";
 import { getPaymentRowData } from "@/lib/calculations";
 import { Badge } from "@/components/ui/badge";
@@ -103,10 +101,15 @@ const STATUS_CONFIG = {
 /**
  * Monta uma linha de pagamento com dados calculados.
  * Inclui apenas pendentes e atrasados (exclui pago).
- * valorDevido = aluguel + condomínio (se cobrança junto).
+ * valorDevido = maior valor conhecido entre aluguel, esperado e pago.
  */
-function buildPaymentRow(payment, tenant, condominiumChargeWithRent, condominiumByPeriod) {
-  const valorDevido = Number(payment.expectedAmount) || Number(payment.amount) || 0;
+function buildPaymentRow(payment, tenant) {
+  const candidates = [
+    Number(tenant?.rentValue),
+    Number(payment.expectedAmount),
+    Number(payment.amount),
+  ].filter((value) => Number.isFinite(value) && value > 0);
+  const valorDevido = candidates.length ? Math.max(...candidates) : 0;
   const row = getPaymentRowData(payment, valorDevido);
   // Mostrar na tabela: pendente OU atrasado (não pago)
   if (row.status === "pago") return null;
@@ -134,23 +137,13 @@ function sortPaymentsByYearMonthDesc(payments) {
 /**
  * Agrupa por inquilino: nome aparece uma vez; ao expandir, mostra tabela com pendentes e atrasados.
  */
-function buildGroupedByTenant(
-  payments,
-  tenants,
-  condominiumChargeWithRent,
-  condominiumByPeriod
-) {
+function buildGroupedByTenant(payments, tenants) {
   const byTenant = Object.fromEntries((tenants || []).map((t) => [t.id, t]));
 
   const rows = (payments || [])
     .map((p) => {
       const tenant = byTenant[p.tenantId];
-      return buildPaymentRow(
-        p,
-        tenant,
-        condominiumChargeWithRent,
-        condominiumByPeriod
-      );
+      return buildPaymentRow(p, tenant);
     })
     .filter(Boolean)
     .sort((a, b) => {
@@ -199,8 +192,6 @@ export default function InadimplentesPage() {
   const [editingPayment, setEditingPayment] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
-  const [condominiumChargeWithRent, setCondominiumChargeWithRent] = useState(true);
-  const [condominiumByPeriod, setCondominiumByPeriod] = useState({});
   const [tenantHistoryById, setTenantHistoryById] = useState({});
   const [loadingTenantHistoryId, setLoadingTenantHistoryId] = useState(null);
   const [activeView, setActiveView] = useState("tabela");
@@ -229,34 +220,14 @@ export default function InadimplentesPage() {
     setLoadError(null);
     try {
       setLoading(true);
-      const [paymentsData, tenantsData, condSettings, condOverview] =
-        await Promise.all([
-          fetchPayments({ openOnly: true }),
-          fetchTenants({ financialOnly: true }),
-          fetchCondominiumSettings().catch(() => ({ chargeWithRent: true })),
-          fetchCondominiumOverview({ historyMonths: 60 }).catch(() => ({
-            billingHistory: [],
-          })),
-        ]);
+      const [paymentsData, tenantsData] = await Promise.all([
+        fetchPayments({ openOnly: true }),
+        fetchTenants({ financialOnly: true }),
+      ]);
       const payments = Array.isArray(paymentsData) ? paymentsData : [];
       const tenantsList = Array.isArray(tenantsData) ? tenantsData : [];
       setTenants(tenantsList);
-      setCondominiumChargeWithRent(condSettings?.chargeWithRent !== false);
-      const byPeriod = {};
-      if (condOverview?.billingHistory?.length) {
-        condOverview.billingHistory.forEach((row) => {
-          byPeriod[`${row.year}-${row.month}`] = Number(row.totalValue) || 0;
-        });
-      }
-      setCondominiumByPeriod(byPeriod);
-      setGrouped(
-        buildGroupedByTenant(
-          payments,
-          tenantsList,
-          condSettings?.chargeWithRent !== false,
-          byPeriod
-        )
-      );
+      setGrouped(buildGroupedByTenant(payments, tenantsList));
     } catch (e) {
       console.error(e);
       setGrouped([]);
@@ -378,27 +349,10 @@ export default function InadimplentesPage() {
       return { periodKey, label: `${shortMonth}/${String(y).slice(2)}`, value };
     });
 
-    // top5 sempre sobre todos os meses, ignorando filtro de período
-    const byTenantAll = {};
-    allRowsGlobal.forEach((r) => {
-      const id = r.tenantId;
-      if (!byTenantAll[id]) {
-        byTenantAll[id] = {
-          tenantId: id,
-          tenantName: r.tenantName,
-          kitnetNumber: r.kitnetNumber,
-          totalPendente: 0,
-          payments: [],
-        };
-      }
-      byTenantAll[id].totalPendente += r.pendente || 0;
-      byTenantAll[id].payments.push(r);
-    });
-    const groupsAll = Object.values(byTenantAll);
-    const top5 = [...groupsAll]
+    const top5 = [...groupsPeriod]
       .sort((a, b) => b.totalPendente - a.totalPendente)
       .slice(0, 5);
-    const top5ByParcelas = [...groupsAll]
+    const top5ByParcelas = [...groupsPeriod]
       .sort((a, b) => (b.payments?.length || 0) - (a.payments?.length || 0))
       .slice(0, 5)
       .map((g) => ({ ...g, parcelasEmAberto: g.payments?.length || 0 }));
@@ -581,7 +535,7 @@ export default function InadimplentesPage() {
           <CardDescription>
             Veja abaixo os inquilinos com valores em aberto.
           </CardDescription>
-          <div className="mt-3 flex items-center gap-3 rounded-lg border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3">
+          <div className="mt-3 flex flex-col items-start gap-2 rounded-lg border-2 border-amber-500/40 bg-amber-500/10 px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
             <MousePointerClick className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-500" />
             <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
               Clique na linha do inquilino para ver todos os pagamentos atrasados e pendentes.
@@ -601,7 +555,7 @@ export default function InadimplentesPage() {
               Carregando...
             </p>
           ) : (
-            <Table>
+            <Table mobileCards>
               <TableHeader>
                 <TableRow className="border-0 bg-muted/40 hover:bg-muted/40">
                   <TableHead className="h-11 w-10 px-4 py-3" aria-label="Expandir" />
@@ -618,8 +572,9 @@ export default function InadimplentesPage() {
               </TableHeader>
               <TableBody>
                 {grouped.length === 0 ? (
-                  <TableRow>
+                  <TableRow data-mobile-detail="true">
                     <TableCell
+                      data-mobile-full="true"
                       colSpan={4}
                       className="h-24 px-4 py-3 text-center text-sm text-muted-foreground"
                     >
@@ -639,9 +594,7 @@ export default function InadimplentesPage() {
                                     ? payment
                                     : buildPaymentRow(
                                         payment,
-                                        tenants.find((tenant) => tenant.id === g.tenantId),
-                                        condominiumChargeWithRent,
-                                        condominiumByPeriod
+                                        tenants.find((tenant) => tenant.id === g.tenantId)
                                       )
                                 )
                                 .filter(Boolean)
@@ -659,26 +612,27 @@ export default function InadimplentesPage() {
                           setExpandedId(expandedId === g.tenantId ? null : g.tenantId);
                         }}
                       >
-                        <TableCell className="w-10 px-4 py-3 align-middle">
+                        <TableCell data-mobile-full="true" className="w-10 px-4 py-3 align-middle">
                           {expandedId === g.tenantId ? (
                             <ChevronDown className="h-4 w-4 text-muted-foreground" />
                           ) : (
                             <ChevronRight className="h-4 w-4 text-muted-foreground" />
                           )}
                         </TableCell>
-                        <TableCell className="px-4 py-3 text-left align-middle text-sm font-medium">
+                        <TableCell data-mobile-primary="true" className="px-4 py-3 text-left align-middle text-sm font-medium">
                           {g.tenantName}
                         </TableCell>
-                        <TableCell className="px-4 py-3 text-left align-middle text-sm text-muted-foreground">
+                        <TableCell data-label="Kitnet" className="px-4 py-3 text-left align-middle text-sm text-muted-foreground">
                           {g.kitnetNumber}
                         </TableCell>
-                        <TableCell className="px-4 py-3 text-right align-middle text-sm tabular-nums font-semibold text-red-600 dark:text-red-400">
+                        <TableCell data-label="Debito total" className="px-4 py-3 text-right align-middle text-sm tabular-nums font-semibold text-red-600 dark:text-red-400">
                           {formatCurrency(g.totalPendente)}
                         </TableCell>
                       </TableRow>
                       {expandedId === g.tenantId && (
-                        <TableRow className="hover:bg-transparent">
+                        <TableRow data-mobile-detail="true" className="hover:bg-transparent">
                           <TableCell
+                            data-mobile-full="true"
                             colSpan={4}
                             className="border-t-0 bg-muted/10 p-0 align-top"
                           >
@@ -844,6 +798,7 @@ export default function InadimplentesPage() {
                 <TopDebtorsList
                   items={dashboardData.top5ByParcelas}
                   formatCurrency={formatCurrency}
+                  metric="installments"
                 />
               </CardContent>
             </Card>

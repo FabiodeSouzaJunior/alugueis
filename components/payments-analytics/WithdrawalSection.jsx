@@ -666,8 +666,8 @@ export function WithdrawalSection() {
                   Nenhum saque solicitado ainda.
                 </p>
               ) : (
-                <div className="rounded-lg border border-border/50">
-                  <table className="w-full table-fixed text-sm border-collapse">
+                <div className="responsive-table-wrapper rounded-lg border border-border/50">
+                  <table className="responsive-table w-full table-fixed text-sm border-collapse">
                     <thead>
                       <tr className="bg-muted/40">
                         <th className="h-10 px-3 py-2 text-left text-xs font-medium text-muted-foreground">
@@ -700,18 +700,18 @@ export function WithdrawalSection() {
                             key={withdrawal.id}
                             className="border-b border-border/30 last:border-0 hover:bg-muted/20"
                           >
-                            <td className="px-3 py-2.5 align-middle">
+                            <td data-mobile-primary="true" className="px-3 py-2.5 align-middle">
                               {formatDateTime(withdrawal.requestedAt)}
                             </td>
-                            <td className="px-3 py-2.5 align-middle font-semibold">
+                            <td data-label="Valor" className="px-3 py-2.5 align-middle font-semibold">
                               {formatCurrency(withdrawal.netAmount || 0)}
                             </td>
-                            <td className="truncate px-3 py-2.5 align-middle text-muted-foreground">
+                            <td data-label="Metodo PIX" className="truncate px-3 py-2.5 align-middle text-muted-foreground max-sm:whitespace-normal">
                               {payoutMethod
                                 ? formatOwnerMethodLabel(payoutMethod, ownerNameById)
                                 : "Metodo removido"}
                             </td>
-                            <td className="px-3 py-2.5 align-middle">
+                            <td data-label="Status" className="px-3 py-2.5 align-middle">
                               <Badge
                                 variant="outline"
                                 className={cn("font-medium", statusConfig.className)}
@@ -719,7 +719,7 @@ export function WithdrawalSection() {
                                 {statusConfig.label}
                               </Badge>
                             </td>
-                            <td className="truncate px-3 py-2.5 align-middle text-muted-foreground">
+                            <td data-label="Observacao" className="truncate px-3 py-2.5 align-middle text-muted-foreground max-sm:whitespace-normal">
                               {withdrawal.metadata?.note || withdrawal.failureReason || "-"}
                             </td>
                           </tr>

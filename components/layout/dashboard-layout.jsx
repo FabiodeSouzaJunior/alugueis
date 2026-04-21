@@ -16,14 +16,14 @@ export function DashboardLayout({ children }) {
     <PageHeaderProvider>
       <AppFiltersProvider>
       <KeyboardShortcutsProvider onOpenSearch={setSearchOpen}>
-        <div className="min-h-screen bg-background">
+        <div className="min-h-screen overflow-x-hidden bg-background">
           <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-          <div className="min-h-screen md:pl-64">
+          <div className="min-h-screen min-w-0 md:pl-64">
             <Header
               onMenuClick={() => setSidebarOpen(true)}
               onOpenSearch={setSearchOpen}
             />
-            <main className="p-4 md:p-6">{children}</main>
+            <main className="min-w-0 max-w-full overflow-x-hidden p-3 sm:p-4 md:p-6">{children}</main>
           </div>
         </div>
         <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />

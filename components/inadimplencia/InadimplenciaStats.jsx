@@ -7,7 +7,7 @@ const cardConfig = {
   inquilinos: {
     icon: Users,
     label: "Total de inquilinos inadimplentes",
-    description: "Pessoas com pagamentos em aberto",
+    description: "Pessoas com saldo em aberto",
     className: "border-slate-500/30 bg-slate-500/5",
     valueClassName: "text-foreground",
   },
@@ -20,15 +20,15 @@ const cardConfig = {
   },
   atrasados: {
     icon: AlertTriangle,
-    label: "Pagamentos atrasados",
-    description: "Parcelas vencidas",
+    label: "Saldo atrasado",
+    description: "Parcelas vencidas em aberto",
     className: "border-red-500/30 bg-red-500/5",
     valueClassName: "text-red-600 dark:text-red-400",
   },
   pendentes: {
     icon: Clock,
-    label: "Pagamentos apenas pendentes",
-    description: "Parcelas ainda no prazo",
+    label: "Saldo pendente",
+    description: "Parcelas em aberto no prazo",
     className: "border-amber-500/30 bg-amber-500/5",
     valueClassName: "text-amber-600 dark:text-amber-400",
   },

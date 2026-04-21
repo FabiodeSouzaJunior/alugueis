@@ -123,7 +123,7 @@ export function WaterEnergyTable({
             placeholder="Buscar por nome..."
             value={search ?? ""}
             onChange={(e) => onSearch?.(e.target.value)}
-            className="max-w-xs"
+            className="w-full sm:max-w-xs"
           />
         </div>
       </CardHeader>
@@ -135,8 +135,8 @@ export function WaterEnergyTable({
             description="Não há inquilinos ativos ou consumos registrados para o período."
           />
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
+          <div className="overflow-visible">
+            <Table mobileCards>
               <TableHeader>
                 <TableRow>
                   {COLUMNS.map((col) => (
@@ -168,12 +168,12 @@ export function WaterEnergyTable({
                       )}
                       onClick={() => onRowClick?.(row)}
                     >
-                      <TableCell className="font-medium">{row.tenant?.name ?? "—"}</TableCell>
-                      <TableCell>{row.tenant?.kitnetNumber ?? "—"}</TableCell>
-                      <TableCell className="tabular-nums">{formatConsumption(row.water)}</TableCell>
-                      <TableCell className="tabular-nums">{formatConsumption(row.electricity)}</TableCell>
-                      <TableCell className="font-semibold tabular-nums">{formatConsumption(row.total)}</TableCell>
-                      <TableCell>
+                      <TableCell data-mobile-primary="true" className="font-medium">{row.tenant?.name ?? "—"}</TableCell>
+                      <TableCell data-label="Kitnet">{row.tenant?.kitnetNumber ?? "—"}</TableCell>
+                      <TableCell data-label="Agua" className="tabular-nums">{formatConsumption(row.water)}</TableCell>
+                      <TableCell data-label="Luz" className="tabular-nums">{formatConsumption(row.electricity)}</TableCell>
+                      <TableCell data-label="Total" className="font-semibold tabular-nums">{formatConsumption(row.total)}</TableCell>
+                      <TableCell data-label="Variacao">
                         {row.variation != null ? (
                           <span
                             className={cn(
@@ -189,7 +189,7 @@ export function WaterEnergyTable({
                           "—"
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell data-mobile-actions="true">
                         {row.currentRecord && (
                           <Button
                             variant="ghost"

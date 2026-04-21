@@ -178,7 +178,7 @@ export default function DespesasPage() {
               }
             />
           ) : (
-          <Table>
+          <Table mobileCards>
             <TableHeader>
               <TableRow>
                 <TableHead>Tipo</TableHead>
@@ -191,13 +191,13 @@ export default function DespesasPage() {
             <TableBody>
               {expenses.map((e) => (
                 <TableRow key={e.id}>
-                  <TableCell className="font-medium">{e.type}</TableCell>
-                  <TableCell className="font-medium text-red-600 dark:text-red-400">{formatCurrency(e.value)}</TableCell>
-                  <TableCell>{formatDate(e.date)}</TableCell>
-                  <TableCell className="max-w-[200px] truncate text-muted-foreground">
+                  <TableCell data-mobile-primary="true" className="font-medium">{e.type}</TableCell>
+                  <TableCell data-label="Valor" className="font-medium text-red-600 dark:text-red-400">{formatCurrency(e.value)}</TableCell>
+                  <TableCell data-label="Data">{formatDate(e.date)}</TableCell>
+                  <TableCell data-label="Descricao" className="max-w-[200px] truncate text-muted-foreground max-sm:max-w-none max-sm:whitespace-normal">
                     {e.description || "-"}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell data-mobile-actions="true" className="text-right">
                     <Button
                       variant="ghost"
                       size="icon"

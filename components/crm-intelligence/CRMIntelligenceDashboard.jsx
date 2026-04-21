@@ -5,9 +5,7 @@ import {
   Home,
   Percent,
   Clock,
-  RefreshCw,
   LogOut,
-  UserPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { accentCardClasses, accentIconClasses } from "@/lib/chartColors";
@@ -46,27 +44,11 @@ const cards = [
     accent: "neutral",
   },
   {
-    key: "renewalRate",
-    icon: RefreshCw,
-    label: "Taxa de renovação",
-    description: "Indicador de retenção",
-    variant: "default",
-    accent: "revenue",
-  },
-  {
     key: "exitsThisMonth",
     icon: LogOut,
     label: "Saídas no mês",
     description: "Encerramentos",
     variant: "warning",
-    accent: null,
-  },
-  {
-    key: "newThisMonth",
-    icon: UserPlus,
-    label: "Novos contratos no mês",
-    description: "Entradas",
-    variant: "positive",
     accent: null,
   },
 ];
@@ -76,22 +58,18 @@ export function CRMIntelligenceDashboard({
   occupied = 0,
   occupancyRate = 0,
   avgTenureMonths = 0,
-  renewalRate = 0,
   exitsThisMonth = 0,
-  newThisMonth = 0,
 }) {
   const values = {
     activeTenants,
     occupied,
     occupancyRate: `${Number(occupancyRate).toFixed(0)}%`,
     avgTenureMonths: avgTenureMonths > 0 ? `${avgTenureMonths} meses` : "-",
-    renewalRate: `${Number(renewalRate).toFixed(0)}%`,
     exitsThisMonth,
-    newThisMonth,
   };
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
       {cards.map(({ key, icon: Icon, label, description, variant, accent }) => (
         <div
           key={key}

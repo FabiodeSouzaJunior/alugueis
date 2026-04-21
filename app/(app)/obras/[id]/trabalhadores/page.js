@@ -161,7 +161,7 @@ export default function ObraTrabalhadoresPage() {
               <p className="mb-4 text-sm font-medium text-muted-foreground">
                 Total pago (mão de obra): <span className="font-semibold text-foreground">{formatCurrency(totalPaid)}</span>
               </p>
-              <Table>
+              <Table mobileCards>
                 <TableHeader>
                   <TableRow className="border-0 bg-muted/40 hover:bg-muted/40">
                     <TableHead className="h-11 px-4 py-3 font-semibold text-foreground">Nome</TableHead>
@@ -173,8 +173,8 @@ export default function ObraTrabalhadoresPage() {
                 </TableHeader>
                 <TableBody>
                   {workers.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                    <TableRow data-mobile-detail="true">
+                      <TableCell data-mobile-full="true" colSpan={5} className="h-24 text-center text-muted-foreground">
                         Nenhum trabalhador registrado.
                       </TableCell>
                     </TableRow>
@@ -185,13 +185,13 @@ export default function ObraTrabalhadoresPage() {
                       const workerStages = stages.filter((s) => workerStageIds.includes(s.id));
                       return (
                         <TableRow key={w.id}>
-                          <TableCell className="px-4 py-3 font-medium">{w.name}</TableCell>
-                          <TableCell className="px-4 py-3 text-muted-foreground">{w.role || "–"}</TableCell>
-                          <TableCell className="px-4 py-3 text-right tabular-nums text-muted-foreground">{formatCurrency(w.dailyRate)}</TableCell>
-                          <TableCell className="px-4 py-3">
+                          <TableCell data-mobile-primary="true" className="px-4 py-3 font-medium">{w.name}</TableCell>
+                          <TableCell data-label="Funcao" className="px-4 py-3 text-muted-foreground">{w.role || "–"}</TableCell>
+                          <TableCell data-label="Diaria" className="px-4 py-3 text-right tabular-nums text-muted-foreground">{formatCurrency(w.dailyRate)}</TableCell>
+                          <TableCell data-label="Status" className="px-4 py-3">
                             <span className="text-muted-foreground">Ativo</span>
                           </TableCell>
-                          <TableCell className="px-4 py-3 text-right">
+                          <TableCell data-mobile-actions="true" className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-0.5">
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDetailsWorker({ worker: w, stages: workerStages })} title="Detalhes">
                                 <Eye className="h-4 w-4" />

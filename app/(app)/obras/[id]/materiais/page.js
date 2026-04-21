@@ -140,7 +140,7 @@ export default function ObraMateriaisPage() {
               <p className="mb-4 text-sm font-medium text-muted-foreground">
                 Custo total em materiais: <span className="font-semibold text-foreground">{formatCurrency(totalMaterials)}</span>
               </p>
-              <Table>
+              <Table mobileCards>
                 <TableHeader>
                   <TableRow className="border-0 bg-muted/40 hover:bg-muted/40">
                     <TableHead className="h-11 px-4 py-3 font-semibold text-foreground">Material</TableHead>
@@ -155,22 +155,22 @@ export default function ObraMateriaisPage() {
                 </TableHeader>
                 <TableBody>
                   {materials.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                    <TableRow data-mobile-detail="true">
+                      <TableCell data-mobile-full="true" colSpan={8} className="h-24 text-center text-muted-foreground">
                         Nenhum material registrado.
                       </TableCell>
                     </TableRow>
                   ) : (
                     materials.map((m) => (
                       <TableRow key={m.id}>
-                        <TableCell className="px-4 py-3 font-medium">{m.materialName}</TableCell>
-                        <TableCell className="px-4 py-3 text-right tabular-nums">{Number(m.quantity)}</TableCell>
-                        <TableCell className="px-4 py-3 text-muted-foreground">{m.unit}</TableCell>
-                        <TableCell className="px-4 py-3 text-right tabular-nums text-muted-foreground">{formatCurrency(m.unitPrice)}</TableCell>
-                        <TableCell className="px-4 py-3 text-right tabular-nums font-medium text-red-600 dark:text-red-400">{formatCurrency(m.totalValue)}</TableCell>
-                        <TableCell className="px-4 py-3 text-muted-foreground">{m.supplier || "–"}</TableCell>
-                        <TableCell className="px-4 py-3 text-muted-foreground">{formatDate(m.purchaseDate) || "–"}</TableCell>
-                        <TableCell className="px-4 py-3 text-right">
+                        <TableCell data-mobile-primary="true" className="px-4 py-3 font-medium">{m.materialName}</TableCell>
+                        <TableCell data-label="Qtd" className="px-4 py-3 text-right tabular-nums">{Number(m.quantity)}</TableCell>
+                        <TableCell data-label="Un" className="px-4 py-3 text-muted-foreground">{m.unit}</TableCell>
+                        <TableCell data-label="Preco un." className="px-4 py-3 text-right tabular-nums text-muted-foreground">{formatCurrency(m.unitPrice)}</TableCell>
+                        <TableCell data-label="Total" className="px-4 py-3 text-right tabular-nums font-medium text-red-600 dark:text-red-400">{formatCurrency(m.totalValue)}</TableCell>
+                        <TableCell data-label="Fornecedor" className="px-4 py-3 text-muted-foreground">{m.supplier || "–"}</TableCell>
+                        <TableCell data-label="Compra" className="px-4 py-3 text-muted-foreground">{formatDate(m.purchaseDate) || "–"}</TableCell>
+                        <TableCell data-mobile-actions="true" className="px-4 py-3 text-right">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditingMaterial(m); setDialogOpen(true); }} title="Editar">
                             <Pencil className="h-4 w-4" />
                           </Button>

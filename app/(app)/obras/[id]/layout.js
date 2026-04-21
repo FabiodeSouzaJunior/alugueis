@@ -64,7 +64,7 @@ export default function ObraLayout({ children }) {
 
   return (
     <div className="space-y-6">
-      <nav className="flex flex-wrap gap-1 rounded-lg border border-border bg-card p-2">
+      <nav className="grid grid-cols-2 gap-2 overflow-visible rounded-lg border border-border bg-card p-2 sm:grid-cols-3 lg:flex lg:flex-wrap">
         {navItems.map((item) => {
           const href = `${base}/${item.href}`;
           const isActive = current === item.href;
@@ -74,7 +74,7 @@ export default function ObraLayout({ children }) {
               key={item.href}
               href={href}
               className={cn(
-                "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                "flex min-w-0 items-center justify-center gap-2 rounded-md px-3 py-2 text-center text-sm font-medium transition-colors lg:shrink-0",
                 isActive
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"

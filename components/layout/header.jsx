@@ -92,7 +92,7 @@ export function Header({ onMenuClick, onOpenSearch }) {
   return (
     <header className="sticky top-0 z-30 flex min-h-16 flex-col justify-center border-b border-border bg-background/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-6">
       <div className="flex w-full flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <Button
             variant="ghost"
             size="icon"
@@ -104,16 +104,16 @@ export function Header({ onMenuClick, onOpenSearch }) {
           </Button>
           <div className="min-w-0">
             {title != null && (
-              <h2 className="text-2xl font-bold tracking-tight text-foreground">
+              <h2 className="truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                 {title}
               </h2>
             )}
             {description != null && (
-              <p className="text-muted-foreground">{description}</p>
+              <p className="line-clamp-2 text-sm text-muted-foreground sm:text-base">{description}</p>
             )}
           </div>
         </div>
-        <div className="flex shrink-0 items-center justify-end gap-2">
+        <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
           <Button
             variant="outline"
             size="sm"

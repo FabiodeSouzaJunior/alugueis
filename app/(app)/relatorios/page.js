@@ -15,6 +15,7 @@ import {
   getCurrentMonthYear,
   getPaymentsForMonth,
   getExpensesForMonth,
+  getPaymentRowData,
 } from "@/lib/calculations";
 import { fetchTenants, fetchPayments, fetchExpenses } from "@/lib/api";
 import { StatsCard } from "@/components/reports/StatsCard";
@@ -41,9 +42,27 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => ({
 }));
 
 function enrichPaymentsForMonth(payments, tenants) {
+  const tenantById = Object.fromEntries((tenants || []).map((tenant) => [tenant.id, tenant]));
+
   return (payments || []).map((p) => {
-    const expected = Number(p.expectedAmount) || Number(p.amount) || 0;
-    return { ...p, expectedAmount: expected };
+    const tenantRent = Number(tenantById[p.tenantId]?.rentValue);
+    const expectedAmount = Number(p.expectedAmount);
+    const paidAmount = Number(p.amount);
+    const candidates = [tenantRent, expectedAmount, paidAmount].filter(
+      (value) => Number.isFinite(value) && value > 0
+    );
+    const valorDevido = candidates.length ? Math.max(...candidates) : 0;
+    const row = getPaymentRowData(p, valorDevido);
+
+    return {
+      ...p,
+      expectedAmount: row.valorDevido,
+      valorDevido: row.valorDevido,
+      valorPago: row.valorPago,
+      pendente: row.pendente,
+      status: row.status,
+      diasAtraso: row.diasAtraso,
+    };
   });
 }
 
@@ -162,11 +181,11 @@ export default function RelatoriosPage() {
     const empty = Math.max(0, totalKitnets - occupied);
 
     const expectedRevenue = periodPayments.reduce(
-      (s, p) => s + (Number(p.expectedAmount) || 0), 0
+      (s, p) => s + (Number(p.valorDevido ?? p.expectedAmount) || 0), 0
     );
 
     const receivedRevenue = periodPayments.reduce(
-      (s, p) => s + (Number(p.amount) || 0), 0
+      (s, p) => s + (Number(p.valorPago ?? p.amount) || 0), 0
     );
 
     const monthExpensesTotal = periodExpenses.reduce(
@@ -188,29 +207,21 @@ export default function RelatoriosPage() {
 
   const monthDetail = useMemo(() => {
     const monthPayments = periodPayments;
-    const today = new Date().toISOString().split("T")[0];
-
     const totalExpected = monthPayments.reduce(
-      (s, p) => s + (Number(p.expectedAmount) || 0), 0
+      (s, p) => s + (Number(p.valorDevido ?? p.expectedAmount) || 0), 0
     );
 
     const totalReceived = monthPayments.reduce(
-      (s, p) => s + (Number(p.amount) || 0), 0
+      (s, p) => s + (Number(p.valorPago ?? p.amount) || 0), 0
     );
 
-    const totalOverdue = monthPayments.reduce((s, p) => {
-      const remaining = Math.max(0, (Number(p.expectedAmount) || 0) - (Number(p.amount) || 0));
-      if (remaining > 0 && p.dueDate && p.dueDate < today) return s + remaining;
-      return s;
-    }, 0);
+    const totalOverdue = monthPayments
+      .filter((p) => p.status === "atrasado")
+      .reduce((s, p) => s + (Number(p.pendente) || 0), 0);
 
-    const totalPending = monthPayments.reduce((s, p) => {
-      if (p.status === "pendente") {
-        const remaining = Math.max(0, (Number(p.expectedAmount) || 0) - (Number(p.amount) || 0));
-        return s + remaining;
-      }
-      return s;
-    }, 0);
+    const totalPending = monthPayments
+      .filter((p) => p.status === "pendente")
+      .reduce((s, p) => s + (Number(p.pendente) || 0), 0);
 
     return {
       month: reportMonth,
@@ -229,7 +240,7 @@ export default function RelatoriosPage() {
     const prev = shiftMonth(reportMonth, reportYear, -1);
     const prevPayments = getPaymentsForMonth(paymentsEnriched, prev.month, prev.year);
     const prevReceived = prevPayments.reduce(
-      (s, x) => s + (Number(x.amount) || 0), 0
+      (s, x) => s + (Number(x.valorPago ?? x.amount) || 0), 0
     );
     const prevExpensesTotal = getExpensesForMonth(expenses, prev.month, prev.year).reduce(
       (s, x) => s + Number(x.value || 0), 0

@@ -120,8 +120,8 @@ export function ConsumptionHistoryPanel({
               </span>
             </button>
             {historyTableExpanded && (
-              <div className="overflow-x-auto border-t border-border">
-                <Table>
+              <div className="border-t border-border">
+                <Table mobileCards>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Mês/Ano</TableHead>
@@ -132,18 +132,18 @@ export function ConsumptionHistoryPanel({
                   </TableHeader>
                   <TableBody>
                     {tableData.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                      <TableRow data-mobile-detail="true">
+                        <TableCell data-mobile-full="true" colSpan={4} className="text-center text-muted-foreground py-8">
                           Nenhum registro de consumo.
                         </TableCell>
                       </TableRow>
                     ) : (
                       tableData.map((row) => (
                         <TableRow key={`${row.year}-${row.month}`}>
-                          <TableCell className="font-medium">{row.period}</TableCell>
-                          <TableCell className="text-right tabular-nums">{formatConsumption(row.water)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{formatConsumption(row.electricity)}</TableCell>
-                          <TableCell className="text-right font-semibold tabular-nums">{formatConsumption(row.total)}</TableCell>
+                          <TableCell data-mobile-primary="true" className="font-medium">{row.period}</TableCell>
+                          <TableCell data-label="Agua" className="text-right tabular-nums">{formatConsumption(row.water)}</TableCell>
+                          <TableCell data-label="Luz" className="text-right tabular-nums">{formatConsumption(row.electricity)}</TableCell>
+                          <TableCell data-label="Total" className="text-right font-semibold tabular-nums">{formatConsumption(row.total)}</TableCell>
                         </TableRow>
                       ))
                     )}
