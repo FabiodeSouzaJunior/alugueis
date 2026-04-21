@@ -262,11 +262,10 @@ export function safeCompareStrings(a, b) {
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
 
-export function verifyAbacatepaySignature(rawBody, signatureFromHeader) {
+export function verifyAbacatepaySignature(rawBody, signatureFromHeader, publicKey = getAbacatePayWebhookPublicKey()) {
   if (!rawBody || !signatureFromHeader) return false;
   const normalizedSignature = String(signatureFromHeader).trim();
   if (!normalizedSignature) return false;
-  const publicKey = getAbacatePayWebhookPublicKey();
   if (!publicKey) return false;
 
   const expectedSignature = crypto
@@ -278,9 +277,42 @@ export function verifyAbacatepaySignature(rawBody, signatureFromHeader) {
 }
 
 export function normalizeAbacatepayEventType(payload) {
-  return String(payload?.event || payload?.type || "")
+  const normalized = String(payload?.event || payload?.type || "")
     .trim()
     .toLowerCase();
+
+  if (normalized === "billing.paid") return "billing.paid";
+  if (normalized === "billing.refunded") return "billing.refunded";
+  if (normalized === "withdraw.completed") return "withdraw.completed";
+  if (normalized === "withdraw.done") return "withdraw.done";
+  if (normalized === "withdraw.failed") return "withdraw.failed";
+
+  return normalized;
+}
+
+export function inferAbacatepayApiVersion(payload) {
+  const explicitVersion = Number(payload?.apiVersion);
+  if (explicitVersion === 1 || explicitVersion === 2) return explicitVersion;
+
+  const eventType = normalizeAbacatepayEventType(payload);
+  if (
+    eventType.startsWith("billing.") ||
+    eventType.startsWith("withdraw.") ||
+    payload?.api_version === 1
+  ) {
+    return 1;
+  }
+
+  if (
+    eventType.startsWith("checkout.") ||
+    eventType.startsWith("transparent.") ||
+    eventType.startsWith("payout.") ||
+    eventType.startsWith("reconciliation.")
+  ) {
+    return 2;
+  }
+
+  return null;
 }
 
 function isResourceLike(value) {
@@ -420,6 +452,8 @@ export function sanitizeHeadersForAudit(headersLike) {
     "user-agent",
     "x-abacate-signature",
     "x-webhook-signature",
+    "x-provider-config-id",
+    "x-abacatepay-provider-config-id",
     "x-forwarded-for",
     "x-forwarded-proto",
   ]);

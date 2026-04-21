@@ -1,7 +1,9 @@
 import { getServiceRoleClient, getSupabaseClient } from "@/database/supabaseClient";
 import {
   createTransparentPixCharge,
+  getAbacatepayResponseApiVersion,
   sanitizeCheckoutPayload,
+  validateAbacatepayWebhookRequest,
 } from "@/server/modules/financial/abacatepay.service";
 import {
   buildNormalizedWebhookEventKey,
@@ -9,6 +11,7 @@ import {
   createRequestHash,
   centsToAmount,
   extractAbacatepayExternalId,
+  extractAbacatepayPaymentMetadata,
   extractAbacatepayPaymentId,
   extractAbacatepayResource,
   extractAbacatepayResourceId,
@@ -16,8 +19,14 @@ import {
   extractPlatformFeeCents,
   extractReceiptUrl,
   extractResourceUpdatedAt,
+  inferAbacatepayApiVersion,
   normalizeAbacatepayEventType,
 } from "@/server/modules/financial/owner-wallet.utils";
+import {
+  buildPaymentProviderConfigSnapshot,
+  getActivePaymentProviderConfigByOrganization,
+  getPaymentProviderConfigById,
+} from "@/features/pagamentos/provider-configs";
 import {
   getDueDateForPeriod,
 } from "@/lib/payment-dates";
@@ -51,6 +60,7 @@ const SUCCESS_EVENT_TYPES = new Set([
   "transparent.completed",
   "checkout.completed",
   "reconciliation.paid",
+  "billing.paid",
 ]);
 
 const REVERSAL_EVENT_TYPES = new Set([
@@ -58,6 +68,7 @@ const REVERSAL_EVENT_TYPES = new Set([
   "checkout.refunded",
   "transparent.disputed",
   "checkout.disputed",
+  "billing.refunded",
 ]);
 
 function normalizeOutstandingAmountCents(paymentRow) {
@@ -112,6 +123,11 @@ function mapCheckoutRow(row) {
       row.response_payload?.brCodeBase64 || row.response_payload?.data?.brCodeBase64 || null,
     paidAt: row.paid_at || null,
     metadata: row.metadata || {},
+    provider: {
+      configId: row.provider_config_id || null,
+      accountId: row.provider_account_id || null,
+      environment: row.provider_environment || null,
+    },
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
   };
@@ -239,6 +255,12 @@ export async function createPaymentTransparentCheckout({
     throw Object.assign(new Error("Este pagamento já está quitado."), { status: 409 });
   }
 
+  const organizationId = paymentRow.organization_id || tenantRow?.organization_id || null;
+  const providerConfig = await getActivePaymentProviderConfigByOrganization(
+    organizationId,
+    "abacatepay"
+  );
+
   const requestHash = createRequestHash([
     paymentRow.id,
     paymentRow.tenant_id,
@@ -246,7 +268,10 @@ export async function createPaymentTransparentCheckout({
     paymentRow.amount,
     paymentRow.month,
     paymentRow.year,
-    "transparent_v2",
+    "transparent_auto",
+    providerConfig.id,
+    providerConfig.providerAccountId,
+    providerConfig.environment,
   ]);
 
   const serviceClient = getServiceRoleClient();
@@ -262,8 +287,12 @@ export async function createPaymentTransparentCheckout({
     provider: "abacatepay",
     payment_id: paymentRow.id,
     tenant_id: paymentRow.tenant_id,
-    organization_id: paymentRow.organization_id || tenantRow?.organization_id,
+    organization_id: organizationId,
     requested_by_user_id: authUserId,
+    provider_config_id: providerConfig.id,
+    provider_account_id: providerConfig.providerAccountId,
+    provider_environment: providerConfig.environment,
+    provider_config_snapshot: buildPaymentProviderConfigSnapshot(providerConfig),
     request_hash: requestHash,
     checkout_mode: "pix_qr",
     status: "creating",
@@ -273,17 +302,23 @@ export async function createPaymentTransparentCheckout({
     amount_total: centsToAmount(openAmountCents),
     currency: "BRL",
     request_payload: {
-      version: 2,
+      version: "auto",
       type: "transparent",
       paymentId: paymentRow.id,
       tenantId: paymentRow.tenant_id,
+      providerConfigId: providerConfig.id,
+      providerAccountId: providerConfig.providerAccountId,
+      providerEnvironment: providerConfig.environment,
       openAmountCents,
     },
     response_payload: {},
     metadata: {
       paymentId: paymentRow.id,
       tenantId: paymentRow.tenant_id,
-      organizationId: paymentRow.organization_id || tenantRow?.organization_id || null,
+      organizationId,
+      providerConfigId: providerConfig.id,
+      providerAccountId: providerConfig.providerAccountId,
+      providerEnvironment: providerConfig.environment,
       month: paymentRow.month,
       year: paymentRow.year,
     },
@@ -305,25 +340,33 @@ export async function createPaymentTransparentCheckout({
       description: buildCheckoutDescription(paymentRow, tenantRow),
       expiresInSeconds: 1800,
       customer: buildCheckoutCustomer(tenantRow),
+      providerConfig,
       metadata: {
         paymentId: paymentRow.id,
         tenantId: paymentRow.tenant_id,
-        organizationId: paymentRow.organization_id || tenantRow?.organization_id || null,
+        organizationId,
+        providerConfigId: providerConfig.id,
+        providerAccountId: providerConfig.providerAccountId,
+        providerEnvironment: providerConfig.environment,
       },
     });
 
     const providerPayload = sanitizeCheckoutPayload(externalResponse);
+    const providerApiVersion = getAbacatepayResponseApiVersion(externalResponse) || 2;
     const updatedRow = await updateCheckoutRecord(serviceClient, checkoutRow.id, {
       status: "ready",
       provider_status: providerPayload.status || "PENDING",
       provider_checkout_id: providerPayload.id,
       provider_external_id: paymentRow.id,
-      provider_api_version: 2,
+      provider_api_version: providerApiVersion,
       provider_payment_method: "PIX",
       amount_fee: centsToAmount(providerPayload.platformFee || 0),
       amount_total: centsToAmount(providerPayload.amount || openAmountCents),
       reusable_until: providerPayload.expiresAt || null,
-      request_payload: creatingRecord.request_payload,
+      request_payload: {
+        ...creatingRecord.request_payload,
+        version: providerApiVersion,
+      },
       response_payload: providerPayload,
       metadata: {
         ...creatingRecord.metadata,
@@ -912,12 +955,17 @@ async function insertWebhookEvent(serviceClient, row) {
     }
 
     if (!existingEvent && row.provider_event_id) {
-      const existingByProviderEventId = await serviceClient
+      let providerEventQuery = serviceClient
         .from("payment_gateway_webhook_events")
         .select("*")
         .eq("provider", row.provider)
-        .eq("provider_event_id", row.provider_event_id)
-        .maybeSingle();
+        .eq("provider_event_id", row.provider_event_id);
+
+      providerEventQuery = row.provider_config_id
+        ? providerEventQuery.eq("provider_config_id", row.provider_config_id)
+        : providerEventQuery.is("provider_config_id", null);
+
+      const existingByProviderEventId = await providerEventQuery.maybeSingle();
       existingEvent = existingByProviderEventId.data || null;
       existingError = existingError || existingByProviderEventId.error || null;
     }
@@ -942,6 +990,155 @@ async function insertWebhookEvent(serviceClient, row) {
   }
 }
 
+function normalizeHeaders(headers = {}) {
+  return Object.fromEntries(
+    Object.entries(headers || {}).map(([key, value]) => [String(key || "").toLowerCase(), value])
+  );
+}
+
+function normalizeProviderConfigId(value) {
+  const normalized = String(value || "").trim();
+  return normalized || null;
+}
+
+function extractProviderConfigIdFromWebhookInput({ payload = {}, headers = {}, queryParams = {} } = {}) {
+  const normalizedHeaders = normalizeHeaders(headers);
+  const metadata = extractAbacatepayPaymentMetadata(payload);
+
+  return normalizeProviderConfigId(
+    queryParams.providerConfigId ||
+      queryParams.provider_config_id ||
+      normalizedHeaders["x-provider-config-id"] ||
+      normalizedHeaders["x-abacatepay-provider-config-id"] ||
+      metadata?.providerConfigId ||
+      metadata?.provider_config_id ||
+      payload?.providerConfigId ||
+      payload?.provider_config_id
+  );
+}
+
+function buildWebhookProviderConfigFields(providerConfig = null) {
+  return {
+    provider_config_id: providerConfig?.id || null,
+    provider_account_id: providerConfig?.providerAccountId || null,
+    provider_environment: providerConfig?.environment || null,
+  };
+}
+
+async function loadWebhookProviderConfig(configId) {
+  const normalizedConfigId = normalizeProviderConfigId(configId);
+  if (!normalizedConfigId) return null;
+  return getPaymentProviderConfigById(normalizedConfigId, "abacatepay");
+}
+
+async function resolveWebhookProviderConfig({
+  payload = {},
+  headers = {},
+  queryParams = {},
+  checkoutRow = null,
+  withdrawalRow = null,
+  isWithdrawalTransferEvent = false,
+} = {}) {
+  const inputProviderConfigId = extractProviderConfigIdFromWebhookInput({
+    payload,
+    headers,
+    queryParams,
+  });
+  const recordProviderConfigId =
+    withdrawalRow?.provider_config_id || checkoutRow?.provider_config_id || null;
+  const providerConfigId = recordProviderConfigId || inputProviderConfigId;
+
+  if (!providerConfigId) {
+    if (isWithdrawalTransferEvent) {
+      throw Object.assign(new Error("Webhook de payout sem configuracao vinculada ao saque."), {
+        status: 401,
+        code: "provider_config_missing_on_withdrawal_webhook",
+      });
+    }
+    return null;
+  }
+
+  if (
+    recordProviderConfigId &&
+    inputProviderConfigId &&
+    String(recordProviderConfigId) !== String(inputProviderConfigId)
+  ) {
+    throw Object.assign(new Error("Webhook recebido com providerConfigId divergente."), {
+      status: 401,
+      code: "provider_config_mismatch",
+    });
+  }
+
+  const providerConfig = await loadWebhookProviderConfig(providerConfigId);
+  const organizationId =
+    withdrawalRow?.organization_id || checkoutRow?.organization_id || providerConfig?.organizationId || null;
+  if (
+    organizationId &&
+    providerConfig?.organizationId &&
+    String(organizationId) !== String(providerConfig.organizationId)
+  ) {
+    throw Object.assign(new Error("Webhook recebido para configuracao de outra organizacao."), {
+      status: 401,
+      code: "provider_config_organization_mismatch",
+    });
+  }
+
+  return providerConfig;
+}
+
+function validateWebhookWithProviderConfig({
+  rawBody,
+  headers,
+  signatureFromHeader,
+  providedSecret,
+  providerConfig = null,
+  webhookSecretValid,
+  signatureValid,
+  isWithdrawalTransferEvent = false,
+} = {}) {
+  if (providerConfig?.id) {
+    return validateAbacatepayWebhookRequest({
+      rawBody,
+      headers,
+      signatureFromHeader,
+      providedSecret,
+      expectedSecret: providerConfig.webhookSecret || "",
+      expectedPublicKey: providerConfig.webhookPublicKey || "",
+    });
+  }
+
+  if (typeof webhookSecretValid === "boolean" || typeof signatureValid === "boolean") {
+    return {
+      webhookSecretConfigured: null,
+      webhookSecretProvided: !!providedSecret,
+      webhookSecretValid: !!webhookSecretValid,
+      webhookSecretSkipped: false,
+      signatureValid: !!signatureValid,
+      signatureKeyConfigured: null,
+      allowed: !!webhookSecretValid && !!signatureValid,
+    };
+  }
+
+  if (isWithdrawalTransferEvent) {
+    return {
+      webhookSecretConfigured: false,
+      webhookSecretProvided: !!providedSecret,
+      webhookSecretValid: false,
+      webhookSecretSkipped: false,
+      signatureValid: false,
+      signatureKeyConfigured: false,
+      allowed: false,
+    };
+  }
+
+  return validateAbacatepayWebhookRequest({
+    rawBody,
+    headers,
+    signatureFromHeader,
+    providedSecret,
+  });
+}
+
 export async function processAbacatepayWebhook({
   payload,
   rawBody,
@@ -949,6 +1146,8 @@ export async function processAbacatepayWebhook({
   queryParams,
   webhookSecretValid,
   signatureValid,
+  signatureFromHeader = null,
+  providedSecret = "",
 } = {}) {
   const serviceClient = getServiceRoleClient();
   const eventType = normalizeAbacatepayEventType(payload);
@@ -957,10 +1156,10 @@ export async function processAbacatepayWebhook({
     eventType === "transfer.failed" ||
     eventType === "payout.completed" ||
     eventType === "payout.done" ||
-    eventType === "payout.failed";
-  const normalizedEventKey =
-    buildNormalizedWebhookEventKey(payload) ||
-    createRequestHash(["abacatepay-webhook", rawBody || JSON.stringify(payload || {})]);
+    eventType === "payout.failed" ||
+    eventType === "withdraw.completed" ||
+    eventType === "withdraw.done" ||
+    eventType === "withdraw.failed";
   const providerEventId = payload?.id || null;
   const providerCheckoutId = isWithdrawalTransferEvent ? null : extractAbacatepayResourceId(payload);
   const paymentId = isWithdrawalTransferEvent ? null : extractAbacatepayPaymentId(payload);
@@ -976,6 +1175,8 @@ export async function processAbacatepayWebhook({
     if (!checkoutLookup.error) checkoutRow = checkoutLookup.data || null;
   }
 
+  let withdrawalRow = null;
+
   let paymentIdToUse = paymentId || checkoutRow?.payment_id || null;
   let tenantIdToUse = checkoutRow?.tenant_id || null;
   let organizationIdToUse = checkoutRow?.organization_id || null;
@@ -983,12 +1184,15 @@ export async function processAbacatepayWebhook({
   if (isWithdrawalTransferEvent && externalId) {
     const withdrawalLookup = await serviceClient
       .from("withdrawal_requests")
-      .select("id, organization_id")
+      .select(
+        "id, organization_id, owner_id, provider_config_id, provider_account_id, provider_environment"
+      )
       .eq("id", externalId)
       .maybeSingle();
 
     if (!withdrawalLookup.error && withdrawalLookup.data) {
-      organizationIdToUse = organizationIdToUse || withdrawalLookup.data.organization_id || null;
+      withdrawalRow = withdrawalLookup.data;
+      organizationIdToUse = organizationIdToUse || withdrawalRow.organization_id || null;
     }
   }
 
@@ -1004,11 +1208,57 @@ export async function processAbacatepayWebhook({
     }
   }
 
+  let providerConfig = null;
+  let validation = null;
+  try {
+    providerConfig = await resolveWebhookProviderConfig({
+      payload,
+      headers,
+      queryParams,
+      checkoutRow,
+      withdrawalRow,
+      isWithdrawalTransferEvent,
+    });
+    validation = validateWebhookWithProviderConfig({
+      rawBody,
+      headers,
+      signatureFromHeader,
+      providedSecret,
+      providerConfig,
+      webhookSecretValid,
+      signatureValid,
+      isWithdrawalTransferEvent,
+    });
+  } catch (error) {
+    if (!isWithdrawalTransferEvent && error?.code === "provider_config_not_found") {
+      validation = validateWebhookWithProviderConfig({
+        rawBody,
+        headers,
+        signatureFromHeader,
+        providedSecret,
+        webhookSecretValid,
+        signatureValid,
+        isWithdrawalTransferEvent,
+      });
+    } else {
+      throw error;
+    }
+  }
+
+  const providerConfigFields = buildWebhookProviderConfigFields(providerConfig);
+  const normalizedEventKeyBase =
+    buildNormalizedWebhookEventKey(payload) ||
+    createRequestHash(["abacatepay-webhook", rawBody || JSON.stringify(payload || {})]);
+  const normalizedEventKey = providerConfigFields.provider_config_id
+    ? `${providerConfigFields.provider_config_id}:${normalizedEventKeyBase}`
+    : normalizedEventKeyBase;
+
   const { eventRow, duplicate } = await insertWebhookEvent(serviceClient, {
     provider: "abacatepay",
     event_type: eventType || null,
     provider_event_id: providerEventId,
     provider_checkout_id: providerCheckoutId,
+    ...providerConfigFields,
     payment_gateway_checkout_id: checkoutRow?.id || null,
     payment_id: paymentIdToUse,
     tenant_id: tenantIdToUse,
@@ -1018,10 +1268,10 @@ export async function processAbacatepayWebhook({
     raw_payload: rawBody,
     query_params: queryParams || {},
     headers: headers || {},
-    webhook_secret_valid: !!webhookSecretValid,
-    signature_valid: !!signatureValid,
+    webhook_secret_valid: !!validation?.webhookSecretValid,
+    signature_valid: !!validation?.signatureValid,
     signature_algorithm: "HMAC-SHA256",
-    api_version: Number(payload?.apiVersion) || null,
+    api_version: inferAbacatepayApiVersion(payload),
     normalized_event_key: normalizedEventKey,
     processed_result: {},
     received_at: nowIso(),
@@ -1032,19 +1282,21 @@ export async function processAbacatepayWebhook({
       ok: true,
       duplicate: true,
       eventId: eventRow?.id || null,
+      validation,
     };
   }
 
-  if (!webhookSecretValid || !signatureValid) {
+  if (!validation?.allowed) {
     await upsertProcessedWebhook(serviceClient, eventRow.id, {
       processing_status: "failed",
       error_message: "invalid_webhook_auth",
       processed_result: {
-        webhookSecretValid,
-        signatureValid,
+        webhookSecretValid: !!validation?.webhookSecretValid,
+        signatureValid: !!validation?.signatureValid,
+        providerConfigId: providerConfigFields.provider_config_id,
       },
     });
-    return { ok: false, status: 401, eventId: eventRow.id };
+    return { ok: false, status: 401, eventId: eventRow.id, validation };
   }
 
   const resource = extractAbacatepayResource(payload);
@@ -1074,6 +1326,9 @@ export async function processAbacatepayWebhook({
     eventType,
     paymentId: paymentIdToUse,
     externalId,
+    providerConfigId: providerConfigFields.provider_config_id,
+    providerAccountId: providerConfigFields.provider_account_id,
+    providerEnvironment: providerConfigFields.provider_environment,
     duplicate: false,
   };
 
@@ -1130,7 +1385,7 @@ export async function processAbacatepayWebhook({
       processed_result: processedResult,
     });
 
-    return { ok: true, eventId: eventRow.id, processedResult };
+    return { ok: true, eventId: eventRow.id, processedResult, validation };
   } catch (error) {
     await upsertProcessedWebhook(serviceClient, eventRow.id, {
       processing_status: "failed",

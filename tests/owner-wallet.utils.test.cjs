@@ -85,6 +85,34 @@ function runCase(name, fn) {
     );
   });
 
+  runCase("interpreta webhook legado v1 de pagamento", () => {
+    const payload = {
+      event: "billing.paid",
+      devMode: false,
+      data: {
+        id: "bill_abc123",
+        externalId: "pay-v1",
+        amount: 10000,
+        paidAmount: 10000,
+        status: "PAID",
+        metadata: {
+          paymentId: "pay-v1",
+        },
+        updatedAt: "2026-04-18T06:13:33.102Z",
+      },
+    };
+
+    assert.equal(walletUtils.normalizeAbacatepayEventType(payload), "billing.paid");
+    assert.equal(walletUtils.inferAbacatepayApiVersion(payload), 1);
+    assert.equal(walletUtils.extractAbacatepayResourceId(payload), "bill_abc123");
+    assert.equal(walletUtils.extractAbacatepayPaymentId(payload), "pay-v1");
+    assert.equal(walletUtils.extractPaidAmountCents(payload), 10000);
+    assert.equal(
+      walletUtils.buildNormalizedWebhookEventKey(payload),
+      "billing.paid:bill_abc123:pay-v1"
+    );
+  });
+
   runCase("interpreta payload de reparo manual sem objeto data aninhado", () => {
     const payload = {
       event: "reconciliation.paid",
@@ -195,6 +223,21 @@ function runCase(name, fn) {
     };
 
     assert.equal(walletUtils.extractAbacatepayExternalId(payload), "wdr_789");
+  });
+
+  runCase("recupera externalId de webhook legado v1 de saque", () => {
+    const payload = {
+      event: "withdraw.completed",
+      data: {
+        id: "tran_v1",
+        status: "COMPLETED",
+        externalId: "wdr_v1",
+      },
+    };
+
+    assert.equal(walletUtils.normalizeAbacatepayEventType(payload), "withdraw.completed");
+    assert.equal(walletUtils.inferAbacatepayApiVersion(payload), 1);
+    assert.equal(walletUtils.extractAbacatepayExternalId(payload), "wdr_v1");
   });
 
   console.log("owner wallet utils tests passed");

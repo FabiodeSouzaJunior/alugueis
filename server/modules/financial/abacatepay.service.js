@@ -9,19 +9,73 @@ import {
 
 const ABACATEPAY_API_ORIGIN = "https://api.abacatepay.com";
 const DEFAULT_TIMEOUT_MS = 15000;
-
-function getAbacatePayApiKey() {
-  const apiKey = String(process.env.ABACATEPAY_API_KEY || "").trim();
-  if (!apiKey) {
-    throw Object.assign(new Error("ABACATEPAY_API_KEY nao configurada no backend."), {
-      status: 500,
-    });
-  }
-  return apiKey;
-}
+const SUPPORTED_API_VERSIONS = [2, 1];
+const RESPONSE_API_VERSION_SYMBOL = Symbol.for("abacatepay.apiVersion");
 
 export function getAbacatePayWebhookSecret() {
   return String(process.env.ABACATEPAY_WEBHOOK_SECRET || "").trim();
+}
+
+function resolveProviderConfigApiKey({ providerConfig = null, apiKey = null } = {}) {
+  const explicitApiKey = String(apiKey || providerConfig?.apiKey || "").trim();
+  if (explicitApiKey) return explicitApiKey;
+
+  throw Object.assign(new Error("Configuracao AbacatePay nao vinculada a operacao."), {
+    status: 500,
+    code: "provider_config_required",
+  });
+}
+
+function normalizeApiVersion(value) {
+  const parsed = Number(String(value || "").trim().replace(/^v/i, ""));
+  return SUPPORTED_API_VERSIONS.includes(parsed) ? parsed : null;
+}
+
+function resolvePreferredApiVersion(providerConfig = null) {
+  return (
+    normalizeApiVersion(providerConfig?.metadata?.apiVersion) ||
+    normalizeApiVersion(providerConfig?.metadata?.preferredApiVersion) ||
+    normalizeApiVersion(providerConfig?.metadata?.webhookVersion) ||
+    2
+  );
+}
+
+function buildApiVersionOrder(providerConfig = null) {
+  const preferred = resolvePreferredApiVersion(providerConfig);
+  return [preferred, ...SUPPORTED_API_VERSIONS.filter((version) => version !== preferred)];
+}
+
+function annotateAbacatepayResponse(data, apiVersion) {
+  if (data && typeof data === "object") {
+    Object.defineProperty(data, RESPONSE_API_VERSION_SYMBOL, {
+      value: apiVersion,
+      enumerable: false,
+      configurable: true,
+    });
+  }
+  return data;
+}
+
+export function getAbacatepayResponseApiVersion(payload) {
+  return normalizeApiVersion(payload?.[RESPONSE_API_VERSION_SYMBOL]) || null;
+}
+
+function isApiKeyVersionMismatch(error) {
+  const message = String(error?.message || error?.providerData?.error || "").toLowerCase();
+  return error?.status === 401 && message.includes("api key version mismatch");
+}
+
+function buildVersionMismatchError(lastError) {
+  return Object.assign(
+    new Error(
+      "Chave da AbacatePay incompativel com as versoes v1 e v2 testadas. Verifique se a API key foi criada para a integracao correta e possui as permissoes necessarias."
+    ),
+    {
+      status: lastError?.status || 401,
+      providerData: lastError?.providerData || null,
+      isTransient: false,
+    }
+  );
 }
 
 function buildRequestSignal(timeoutMs = DEFAULT_TIMEOUT_MS) {
@@ -37,7 +91,8 @@ async function abacatePayRequest({
   payload,
   searchParams = null,
   apiVersion = 2,
-  apiKey = getAbacatePayApiKey(),
+  apiKey = null,
+  providerConfig = null,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) {
   const url = new URL(`/v${apiVersion}${pathname}`, ABACATEPAY_API_ORIGIN);
@@ -47,10 +102,15 @@ async function abacatePayRequest({
   }
 
   try {
+    const resolvedApiKey = resolveProviderConfigApiKey({
+      providerConfig,
+      apiKey,
+    });
+
     const response = await fetch(url, {
       method,
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${resolvedApiKey}`,
         "Content-Type": "application/json",
       },
       body: payload == null ? undefined : JSON.stringify(payload),
@@ -62,13 +122,6 @@ async function abacatePayRequest({
     if (!response.ok || data?.success === false) {
       let errorMessage =
         data?.error || response.statusText || "Falha na integracao com a AbacatePay.";
-      if (
-        response.status === 401 &&
-        String(errorMessage).toLowerCase().includes("api key version mismatch")
-      ) {
-        errorMessage =
-          "Chave da AbacatePay incompativel com a versao da API chamada. A integracao usa a API v2 para envio de PIX.";
-      }
       throw Object.assign(new Error(String(errorMessage)), {
         status: response.status || 502,
         providerData: data,
@@ -81,7 +134,7 @@ async function abacatePayRequest({
       });
     }
 
-    return data;
+    return annotateAbacatepayResponse(data, apiVersion);
   } catch (error) {
     if (error?.name === "AbortError") {
       throw Object.assign(new Error("Tempo limite excedido ao consultar a AbacatePay."), {
@@ -104,47 +157,142 @@ async function abacatePayRequest({
   }
 }
 
+async function abacatePayRequestWithVersionFallback({
+  providerConfig = null,
+  buildRequestForVersion,
+} = {}) {
+  let lastMismatchError = null;
+
+  for (const apiVersion of buildApiVersionOrder(providerConfig)) {
+    try {
+      return await abacatePayRequest({
+        ...buildRequestForVersion(apiVersion),
+        apiVersion,
+        providerConfig,
+      });
+    } catch (error) {
+      if (!isApiKeyVersionMismatch(error)) throw error;
+      lastMismatchError = error;
+    }
+  }
+
+  throw buildVersionMismatchError(lastMismatchError);
+}
+
+function buildV1PixCustomer(customer = {}) {
+  const name = String(customer?.name || "").trim();
+  const cellphone = String(customer?.cellphone || "").trim();
+  const email = String(customer?.email || "").trim();
+  const taxId = String(customer?.taxId || "").trim();
+  if (!(name && cellphone && email && taxId)) return undefined;
+  return { name, cellphone, email, taxId };
+}
+
+function buildTransparentPixRequestForVersion({
+  apiVersion,
+  amountCents,
+  description,
+  expiresInSeconds,
+  customer,
+  metadata,
+}) {
+  if (apiVersion === 1) {
+    const v1Customer = buildV1PixCustomer(customer);
+    return {
+      pathname: "/pixQrCode/create",
+      payload: {
+        amount: amountCents,
+        expiresIn: expiresInSeconds,
+        description: String(description || "Pagamento de aluguel").slice(0, 37),
+        ...(v1Customer ? { customer: v1Customer } : {}),
+        metadata,
+      },
+    };
+  }
+
+  return {
+    pathname: "/transparents/create",
+    payload: {
+      method: "PIX",
+      data: {
+        amount: amountCents,
+        description: description || "Pagamento de aluguel",
+        expiresIn: expiresInSeconds,
+        customer,
+        metadata,
+      },
+    },
+  };
+}
+
 export async function createTransparentPixCharge({
   amountCents,
   description,
   expiresInSeconds = 1800,
   customer = {},
   metadata = {},
+  providerConfig = null,
 } = {}) {
-  const payload = {
-    method: "PIX",
-    data: {
-      amount: amountCents,
-      description: description || "Pagamento de aluguel",
-      expiresIn: expiresInSeconds,
-      customer,
-      metadata,
-    },
-  };
-
-  return abacatePayRequest({
-    pathname: "/transparents/create",
-    payload,
-    apiVersion: 2,
+  return abacatePayRequestWithVersionFallback({
+    providerConfig,
+    buildRequestForVersion: (apiVersion) =>
+      buildTransparentPixRequestForVersion({
+        apiVersion,
+        amountCents,
+        description,
+        expiresInSeconds,
+        customer,
+        metadata,
+      }),
   });
 }
 
-export async function sendPixTransfer(payload = {}) {
-  return abacatePayRequest({
-    pathname: "/payouts/create",
-    payload,
-    apiVersion: 2,
+export async function sendPixTransfer(payload = {}, { providerConfig = null, apiKey = null } = {}) {
+  if (apiKey) {
+    return abacatePayRequest({
+      pathname: "/payouts/create",
+      payload,
+      apiVersion: 2,
+      providerConfig,
+      apiKey,
+    });
+  }
+
+  return abacatePayRequestWithVersionFallback({
+    providerConfig,
+    buildRequestForVersion: (apiVersion) => ({
+      pathname: apiVersion === 1 ? "/withdraw/create" : "/payouts/create",
+      payload,
+    }),
   });
 }
 
-export async function getPixTransferByExternalId(externalId) {
-  return abacatePayRequest({
-    pathname: "/payouts/get",
-    method: "GET",
-    searchParams: {
-      externalId,
-    },
-    apiVersion: 2,
+export async function getPixTransferByExternalId(
+  externalId,
+  { providerConfig = null, apiKey = null } = {}
+) {
+  if (apiKey) {
+    return abacatePayRequest({
+      pathname: "/payouts/get",
+      method: "GET",
+      searchParams: {
+        externalId,
+      },
+      apiVersion: 2,
+      providerConfig,
+      apiKey,
+    });
+  }
+
+  return abacatePayRequestWithVersionFallback({
+    providerConfig,
+    buildRequestForVersion: (apiVersion) => ({
+      pathname: apiVersion === 1 ? "/withdraw/get" : "/payouts/get",
+      method: "GET",
+      searchParams: {
+        externalId,
+      },
+    }),
   });
 }
 
@@ -170,6 +318,21 @@ export function sanitizePixTransferResponse(payload = {}) {
   return sanitizeAbacatepixTransferPayload(payload);
 }
 
+function sanitizeQueryForAudit(query = {}) {
+  const safeQuery = {};
+  for (const [key, value] of Object.entries(query || {})) {
+    const normalizedKey = String(key || "").toLowerCase();
+    const isSensitive =
+      normalizedKey.includes("secret") ||
+      normalizedKey.includes("token") ||
+      normalizedKey.includes("api-key") ||
+      normalizedKey.includes("apikey") ||
+      normalizedKey.includes("authorization");
+    safeQuery[key] = isSensitive ? "[redacted]" : value;
+  }
+  return safeQuery;
+}
+
 function normalizeOrigin(origin) {
   const normalized = String(origin || "").trim().replace(/\/+$/, "");
   return normalized || null;
@@ -181,9 +344,7 @@ export function getAbacatepayWebhookConfigStatus({ origin = "" } = {}) {
   const webhookPublicKey = getAbacatePayWebhookPublicKey();
   const endpointPath = "/api/webhooks/abacatepay";
   const recommendedUrl = normalizedOrigin
-    ? `${normalizedOrigin}${endpointPath}${
-        webhookSecret ? `?webhookSecret=${encodeURIComponent(webhookSecret)}` : ""
-      }`
+    ? `${normalizedOrigin}${endpointPath}?providerConfigId=<provider_config_id>`
     : null;
 
   const missing = [];
@@ -229,6 +390,7 @@ export function validateAbacatepayWebhookRequest({
   headers,
   providedSecret,
   expectedSecret = getAbacatePayWebhookSecret(),
+  expectedPublicKey = getAbacatePayWebhookPublicKey(),
 } = {}) {
   const resolvedSignature = signatureFromHeader || extractWebhookSignatureFromHeaders(headers);
   const webhookSecretConfigured = !!expectedSecret;
@@ -237,7 +399,12 @@ export function validateAbacatepayWebhookRequest({
   const webhookSecretValid = webhookSecretConfigured
     ? !webhookSecretProvided || safeCompareStrings(providedSecretNormalized, expectedSecret)
     : true;
-  const signatureValid = verifyAbacatepaySignature(rawBody, resolvedSignature);
+  const signatureValid = verifyAbacatepaySignature(rawBody, resolvedSignature, expectedPublicKey);
+  const signatureKeyConfigured = !!expectedPublicKey;
+  const invalidProvidedSecret =
+    webhookSecretConfigured && webhookSecretProvided && !webhookSecretValid;
+  const secretAuthSatisfied = webhookSecretConfigured && webhookSecretProvided && webhookSecretValid;
+  const signatureAuthSatisfied = signatureKeyConfigured && signatureValid;
 
   return {
     webhookSecretConfigured,
@@ -245,14 +412,14 @@ export function validateAbacatepayWebhookRequest({
     webhookSecretValid,
     webhookSecretSkipped: !webhookSecretConfigured || !webhookSecretProvided,
     signatureValid,
-    signatureKeyConfigured: !!getAbacatePayWebhookPublicKey(),
-    allowed: webhookSecretValid && signatureValid,
+    signatureKeyConfigured,
+    allowed: !invalidProvidedSecret && (secretAuthSatisfied || signatureAuthSatisfied),
   };
 }
 
 export function sanitizeWebhookAuditInput({ headers = {}, query = {} } = {}) {
   return {
     headers: sanitizeHeadersForAudit(headers),
-    query,
+    query: sanitizeQueryForAudit(query),
   };
 }

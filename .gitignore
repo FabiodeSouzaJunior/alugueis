@@ -20,3 +20,4 @@ out
 npm-debug.log*
 # vercel
 .vercel
+.env*.local

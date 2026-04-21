@@ -21,6 +21,11 @@ import {
   sanitizePixTransferResponse,
   sendPixTransfer,
 } from "@/server/modules/financial/abacatepay.service";
+import {
+  buildPaymentProviderConfigSnapshot,
+  getActivePayoutProviderConfigByOrganization,
+  getPaymentProviderConfigById,
+} from "@/features/pagamentos/provider-configs";
 
 function tableMissingError(error, identifier) {
   const message = String(error?.message || "");
@@ -47,7 +52,7 @@ function nowIso() {
 }
 
 const WITHDRAWAL_LIST_SELECT =
-  "id, owner_id, payout_method_id, status, requested_amount_cents, fee_cents, net_amount_cents, requested_at, queued_at, reserved_at, settled_at, failed_at, cancelled_at, failure_code, failure_reason, correlation_id, balance_snapshot, request_metadata, provider_reference_id, provider_status, provider_end_to_end_identifier, provider_last_event_type, provider_last_http_status, provider_attempt_count, provider_next_retry_at, provider_last_error, last_provider_sync_at, updated_at, created_at";
+  "id, owner_id, payout_method_id, status, requested_amount_cents, fee_cents, net_amount_cents, requested_at, queued_at, reserved_at, settled_at, failed_at, cancelled_at, failure_code, failure_reason, correlation_id, balance_snapshot, request_metadata, provider_config_id, provider_account_id, provider_environment, provider_config_snapshot, provider_reference_id, provider_status, provider_end_to_end_identifier, provider_last_event_type, provider_last_http_status, provider_attempt_count, provider_next_retry_at, provider_last_error, last_provider_sync_at, updated_at, created_at";
 
 const WITHDRAWAL_EXECUTION_SELECT = `${WITHDRAWAL_LIST_SELECT}, organization_id, sanitized_provider_request, sanitized_provider_response`;
 
@@ -136,6 +141,10 @@ function mapWithdrawalRow(row = {}) {
     balanceSnapshot: row.balance_snapshot || {},
     metadata: row.request_metadata || {},
     provider: {
+      configId: row.provider_config_id || null,
+      accountId: row.provider_account_id || null,
+      environment: row.provider_environment || null,
+      configSnapshot: row.provider_config_snapshot || {},
       referenceId: row.provider_reference_id || null,
       status: row.provider_status || null,
       endToEndIdentifier: row.provider_end_to_end_identifier || null,
@@ -200,7 +209,17 @@ function isTransientProviderError(error) {
 
 function isProviderConfigurationError(error) {
   const message = String(error?.message || "");
-  return message.includes("ABACATEPAY_API_KEY") || message.includes("nao configurada");
+  const code = String(error?.code || "");
+  return (
+    code.startsWith("provider_config") ||
+    error?.code === "provider_config_required" ||
+    error?.code === "provider_config_not_found" ||
+    error?.code === "provider_config_store_missing" ||
+    error?.code === "provider_config_api_key_missing" ||
+    error?.code === "provider_config_encryption_key_missing" ||
+    message.includes("Configuracao AbacatePay") ||
+    message.includes("nao configurada")
+  );
 }
 
 function mapLedgerRow(row = {}) {
@@ -529,7 +548,119 @@ async function fetchWithdrawalRowForProviderWebhook(
   return fetchWithdrawalRowByProviderReferenceId(serviceClient, providerReferenceId);
 }
 
-async function fetchWithdrawalExecutionContext(serviceClient, withdrawalId) {
+function ensureProviderConfigOrganization(providerConfig = {}, organizationId = null) {
+  if (!providerConfig?.id) {
+    throw Object.assign(new Error("Configuracao AbacatePay nao encontrada."), {
+      status: 404,
+      code: "provider_config_not_found",
+    });
+  }
+
+  if (
+    organizationId &&
+    providerConfig.organizationId &&
+    String(providerConfig.organizationId) !== String(organizationId)
+  ) {
+    throw Object.assign(new Error("Configuracao AbacatePay nao pertence a organizacao do saque."), {
+      status: 403,
+      code: "provider_config_organization_mismatch",
+    });
+  }
+}
+
+function buildWithdrawalProviderConfigPatch(providerConfig = {}) {
+  return {
+    provider_config_id: providerConfig.id || null,
+    provider_account_id: providerConfig.providerAccountId || null,
+    provider_environment: providerConfig.environment || null,
+    provider_config_snapshot: buildPaymentProviderConfigSnapshot(providerConfig),
+  };
+}
+
+function withdrawalProviderConfigPatchIsNeeded(withdrawalRow = {}, patch = {}) {
+  const snapshot = withdrawalRow.provider_config_snapshot || {};
+  return (
+    String(withdrawalRow.provider_config_id || "") !== String(patch.provider_config_id || "") ||
+    String(withdrawalRow.provider_account_id || "") !== String(patch.provider_account_id || "") ||
+    String(withdrawalRow.provider_environment || "") !== String(patch.provider_environment || "") ||
+    !snapshot ||
+    Object.keys(snapshot).length === 0
+  );
+}
+
+async function bindProviderConfigToWithdrawal(serviceClient, withdrawalRow = {}, providerConfig = {}) {
+  ensureProviderConfigOrganization(providerConfig, withdrawalRow.organization_id);
+
+  const patch = buildWithdrawalProviderConfigPatch(providerConfig);
+  if (!withdrawalProviderConfigPatchIsNeeded(withdrawalRow, patch)) {
+    return { ...withdrawalRow, ...patch };
+  }
+
+  const { data, error } = await serviceClient
+    .from("withdrawal_requests")
+    .update({
+      ...patch,
+      updated_at: nowIso(),
+    })
+    .eq("id", withdrawalRow.id)
+    .select(WITHDRAWAL_EXECUTION_SELECT)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || { ...withdrawalRow, ...patch };
+}
+
+async function resolveWithdrawalProviderConfig(
+  serviceClient,
+  withdrawalRow = {},
+  { fallbackProviderConfig = null, bindIfMissing = false } = {}
+) {
+  if (withdrawalRow.provider_config_id) {
+    const providerConfig = await getPaymentProviderConfigById(
+      withdrawalRow.provider_config_id,
+      "abacatepay"
+    );
+    ensureProviderConfigOrganization(providerConfig, withdrawalRow.organization_id);
+    const boundWithdrawalRow = await bindProviderConfigToWithdrawal(
+      serviceClient,
+      withdrawalRow,
+      providerConfig
+    );
+    return { providerConfig, withdrawalRow: boundWithdrawalRow };
+  }
+
+  if (bindIfMissing && fallbackProviderConfig?.id) {
+    const boundWithdrawalRow = await bindProviderConfigToWithdrawal(
+      serviceClient,
+      withdrawalRow,
+      fallbackProviderConfig
+    );
+    return { providerConfig: fallbackProviderConfig, withdrawalRow: boundWithdrawalRow };
+  }
+
+  throw Object.assign(new Error("Saque sem configuracao AbacatePay vinculada."), {
+    status: 409,
+    code: "provider_config_missing_on_withdrawal",
+  });
+}
+
+async function fetchVerifiedPayoutMethodForRequest(serviceClient, payoutMethodId, ownerIds = []) {
+  const normalizedOwnerIds = normalizeOwnerSet(ownerIds);
+  if (!payoutMethodId || !normalizedOwnerIds.length) return null;
+
+  const { data, error } = await serviceClient
+    .from("owner_payout_methods")
+    .select("id, owner_id, organization_id, active, verification_status")
+    .eq("id", payoutMethodId)
+    .in("owner_id", normalizedOwnerIds)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data?.active || data?.verification_status !== "verified") return null;
+  return data;
+}
+
+async function fetchWithdrawalExecutionContext(serviceClient, withdrawalId, options = {}) {
   const withdrawalRow = await fetchWithdrawalRowById(serviceClient, withdrawalId);
   if (!withdrawalRow) return null;
 
@@ -551,10 +682,26 @@ async function fetchWithdrawalExecutionContext(serviceClient, withdrawalId) {
   if (payoutMethodResult.error) throw payoutMethodResult.error;
   if (ownerProfileResult.error) throw ownerProfileResult.error;
 
+  let boundWithdrawalRow = withdrawalRow;
+  let providerConfig = null;
+  let providerConfigError = null;
+  try {
+    const resolvedConfig = await resolveWithdrawalProviderConfig(serviceClient, withdrawalRow, {
+      fallbackProviderConfig: options.providerConfig || null,
+      bindIfMissing: !!options.bindProviderConfigIfMissing,
+    });
+    boundWithdrawalRow = resolvedConfig.withdrawalRow || withdrawalRow;
+    providerConfig = resolvedConfig.providerConfig || null;
+  } catch (error) {
+    providerConfigError = error;
+  }
+
   return {
-    withdrawalRow,
+    withdrawalRow: boundWithdrawalRow,
     payoutMethodRow: payoutMethodResult.data || null,
     ownerProfileRow: ownerProfileResult.data || null,
+    providerConfig,
+    providerConfigError,
   };
 }
 
@@ -590,6 +737,11 @@ function buildWithdrawalProviderRequestAudit(payload = {}, context = {}) {
     attemptedAt: nowIso(),
     ownerId: context?.withdrawalRow?.owner_id || null,
     payoutMethodId: context?.withdrawalRow?.payout_method_id || null,
+    providerConfigId: context?.withdrawalRow?.provider_config_id || context?.providerConfig?.id || null,
+    providerAccountId:
+      context?.withdrawalRow?.provider_account_id || context?.providerConfig?.providerAccountId || null,
+    providerEnvironment:
+      context?.withdrawalRow?.provider_environment || context?.providerConfig?.environment || null,
     amount: payload.amount ?? null,
     externalId: payload.externalId || null,
     method: payload.method || null,
@@ -626,6 +778,18 @@ async function updateWithdrawalProviderLogs(serviceClient, withdrawalId, patch =
   }
   if (Object.prototype.hasOwnProperty.call(patch, "status")) {
     updatePayload.status = patch.status;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "provider_config_id")) {
+    updatePayload.provider_config_id = patch.provider_config_id || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "provider_account_id")) {
+    updatePayload.provider_account_id = patch.provider_account_id || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "provider_environment")) {
+    updatePayload.provider_environment = patch.provider_environment || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "provider_config_snapshot")) {
+    updatePayload.provider_config_snapshot = patch.provider_config_snapshot || {};
   }
   if (Object.prototype.hasOwnProperty.call(patch, "provider_reference_id")) {
     updatePayload.provider_reference_id = patch.provider_reference_id || null;
@@ -772,10 +936,10 @@ async function finalizeWithdrawalFromProviderState({
   return resolvedRow ? mapWithdrawalRow(resolvedRow) : null;
 }
 
-async function lookupProviderWithdrawalByExternalId(withdrawalRow = {}) {
+async function lookupProviderWithdrawalByExternalId(withdrawalRow = {}, providerConfig = null) {
   const externalId = withdrawalRow?.id ? String(withdrawalRow.id) : "";
   if (!externalId) return null;
-  return getPixTransferByExternalId(externalId);
+  return getPixTransferByExternalId(externalId, { providerConfig });
 }
 
 function shouldExecuteWithdrawalProviderCall(withdrawalRow = {}) {
@@ -810,15 +974,23 @@ async function syncWithdrawalWithProviderLookup(serviceClient, withdrawalRow, op
   }
 
   try {
-    const providerLookupResult = await lookupProviderWithdrawalByExternalId(withdrawalRow);
+    const { providerConfig, withdrawalRow: boundWithdrawalRow } =
+      await resolveWithdrawalProviderConfig(serviceClient, withdrawalRow, {
+        fallbackProviderConfig: options.providerConfig || null,
+        bindIfMissing: !!options.bindProviderConfigIfMissing,
+      });
+    const providerLookupResult = await lookupProviderWithdrawalByExternalId(
+      boundWithdrawalRow,
+      providerConfig
+    );
     const providerResponse = buildWithdrawalProviderResponseAudit(providerLookupResult, {
       syncSource: options.syncSource || "provider_lookup",
     });
     const resolution = mapAbacatepixTransferStatusToWithdrawalResolution(providerResponse.status);
 
     logWithdrawalEvent("provider_lookup_completed", {
-      withdrawalId: withdrawalRow.id,
-      ownerId: withdrawalRow.owner_id,
+      withdrawalId: boundWithdrawalRow.id,
+      ownerId: boundWithdrawalRow.owner_id,
       providerReferenceId: providerResponse.id || null,
       providerStatus: providerResponse.status || null,
       resolution,
@@ -828,18 +1000,18 @@ async function syncWithdrawalWithProviderLookup(serviceClient, withdrawalRow, op
     if (!resolution) {
       return persistPendingWithdrawalState({
         serviceClient,
-        withdrawalId: withdrawalRow.id,
+        withdrawalId: boundWithdrawalRow.id,
         status: "provider_pending",
         providerResponse,
-        providerAttemptCount: Number(withdrawalRow.provider_attempt_count) || 0,
+        providerAttemptCount: Number(boundWithdrawalRow.provider_attempt_count) || 0,
         providerLastEventType: options.providerLastEventType || null,
-        providerNextRetryAt: buildWithdrawalRetryAt(withdrawalRow.provider_attempt_count),
+        providerNextRetryAt: buildWithdrawalRetryAt(boundWithdrawalRow.provider_attempt_count),
       });
     }
 
     return finalizeWithdrawalFromProviderState({
       serviceClient,
-      withdrawalId: withdrawalRow.id,
+      withdrawalId: boundWithdrawalRow.id,
       providerResponse,
       resolution,
       failureReason:
@@ -865,6 +1037,13 @@ async function syncWithdrawalWithProviderLookup(serviceClient, withdrawalRow, op
       providerNextRetryAt: buildWithdrawalRetryAt(withdrawalRow.provider_attempt_count),
     }).catch(() => {});
 
+    if (isProviderConfigurationError(error)) {
+      const currentRow = await fetchWithdrawalRowById(serviceClient, withdrawalRow.id).catch(
+        () => null
+      );
+      return currentRow ? mapWithdrawalRow(currentRow) : mapWithdrawalRow(withdrawalRow);
+    }
+
     if (!isTransientProviderError(error)) {
       throw error;
     }
@@ -875,11 +1054,23 @@ async function syncWithdrawalWithProviderLookup(serviceClient, withdrawalRow, op
 
 async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
   const serviceClient = options.serviceClient || getServiceRoleClient();
-  const context = await fetchWithdrawalExecutionContext(serviceClient, withdrawalId);
+  const context = await fetchWithdrawalExecutionContext(serviceClient, withdrawalId, {
+    providerConfig: options.providerConfig || null,
+    bindProviderConfigIfMissing: !!options.bindProviderConfigIfMissing,
+  });
   if (!context?.withdrawalRow) return null;
 
   if (!shouldExecuteWithdrawalProviderCall(context.withdrawalRow) && !options.force) {
     return mapWithdrawalRow(context.withdrawalRow);
+  }
+
+  if (context.providerConfigError || !context.providerConfig?.apiKey) {
+    const providerConfigReason =
+      context.providerConfigError?.message ||
+      "Configuracao AbacatePay nao vinculada ao saque.";
+    return failWithdrawalWithoutProviderCall(serviceClient, withdrawalId, providerConfigReason, {
+      validationReason: context.providerConfigError?.code || "provider_config_missing",
+    });
   }
 
   if (!context.payoutMethodRow?.active || context.payoutMethodRow?.verification_status !== "verified") {
@@ -945,19 +1136,27 @@ async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
     withdrawalId,
     ownerId: context.withdrawalRow.owner_id,
     payoutMethodId: context.withdrawalRow.payout_method_id,
+    providerConfigId: context.withdrawalRow.provider_config_id || context.providerConfig?.id || null,
+    providerAccountId:
+      context.withdrawalRow.provider_account_id || context.providerConfig?.providerAccountId || null,
+    providerEnvironment:
+      context.withdrawalRow.provider_environment || context.providerConfig?.environment || null,
     amountCents: context.withdrawalRow.requested_amount_cents,
     providerAttemptCount,
     trigger: options.trigger || "request",
   });
 
   try {
-    const providerResult = await sendPixTransfer(providerPayload);
+    const providerResult = await sendPixTransfer(providerPayload, {
+      providerConfig: context.providerConfig,
+    });
     const providerResponse = buildWithdrawalProviderResponseAudit(providerResult);
     const resolution = mapAbacatepixTransferStatusToWithdrawalResolution(providerResponse.status);
 
     logWithdrawalEvent("provider_send_completed", {
       withdrawalId,
       ownerId: context.withdrawalRow.owner_id,
+      providerConfigId: context.withdrawalRow.provider_config_id || context.providerConfig?.id || null,
       providerReferenceId: providerResponse.id || null,
       providerStatus: providerResponse.status || null,
       resolution,
@@ -1044,6 +1243,7 @@ async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
       context.withdrawalRow,
       {
         syncSource: "post_send_error_lookup",
+        providerConfig: context.providerConfig,
       }
     );
     if (providerLookupResolution) {
@@ -1116,7 +1316,10 @@ export async function processOwnerWithdrawalProviderWebhook({
     normalizedEventType !== "transfer.failed" &&
     normalizedEventType !== "payout.completed" &&
     normalizedEventType !== "payout.done" &&
-    normalizedEventType !== "payout.failed"
+    normalizedEventType !== "payout.failed" &&
+    normalizedEventType !== "withdraw.completed" &&
+    normalizedEventType !== "withdraw.done" &&
+    normalizedEventType !== "withdraw.failed"
   ) {
     return { applied: false, reason: "unsupported_event" };
   }
@@ -1134,6 +1337,20 @@ export async function processOwnerWithdrawalProviderWebhook({
       reason: externalId || providerReferenceId ? "withdrawal_not_found" : "missing_correlation",
       externalId,
       providerReferenceId,
+    };
+  }
+
+  if (
+    eventRow?.provider_config_id &&
+    withdrawalRow.provider_config_id &&
+    String(eventRow.provider_config_id) !== String(withdrawalRow.provider_config_id)
+  ) {
+    return {
+      applied: false,
+      reason: "provider_config_mismatch",
+      withdrawalId: withdrawalRow.id,
+      eventProviderConfigId: eventRow.provider_config_id,
+      withdrawalProviderConfigId: withdrawalRow.provider_config_id,
     };
   }
 
@@ -1166,6 +1383,9 @@ export async function processOwnerWithdrawalProviderWebhook({
   logWithdrawalEvent("provider_webhook_received", {
     withdrawalId: withdrawalRow.id,
     ownerId: withdrawalRow.owner_id,
+    providerConfigId: withdrawalRow.provider_config_id || eventRow?.provider_config_id || null,
+    providerAccountId: withdrawalRow.provider_account_id || eventRow?.provider_account_id || null,
+    providerEnvironment: withdrawalRow.provider_environment || eventRow?.provider_environment || null,
     eventType: normalizedEventType,
     providerReferenceId: providerResponse.id || providerReferenceId || null,
     externalId: providerResponse.externalId || externalId || null,
@@ -1237,6 +1457,39 @@ export async function requestOwnerWithdrawal({
     });
   }
 
+  const serviceClient = getServiceRoleClient();
+  const payoutMethod = await fetchVerifiedPayoutMethodForRequest(
+    serviceClient,
+    payoutMethodId,
+    uniqueOwnerIds
+  );
+  if (!payoutMethod) {
+    throw Object.assign(new Error("Metodo PIX nao encontrado ou ainda nao validado."), {
+      status: 400,
+    });
+  }
+
+  let providerConfig = null;
+  try {
+    providerConfig = await getActivePayoutProviderConfigByOrganization(
+      payoutMethod.organization_id,
+      "abacatepay"
+    );
+  } catch (error) {
+    const status = error?.status === 404 ? 400 : error?.status || 500;
+    throw Object.assign(
+      new Error(
+        error?.status === 404
+          ? "A organizacao do proprietario nao possui uma configuracao AbacatePay ativa."
+          : error?.message || "Nao foi possivel carregar a configuracao AbacatePay."
+      ),
+      {
+        status,
+        code: error?.code || "provider_config_error",
+      }
+    );
+  }
+
   const supabase = getSupabaseClient();
   const { data, error } = await supabase.rpc("queue_owner_withdrawal_request", {
     p_payout_method_id: payoutMethodId,
@@ -1245,6 +1498,10 @@ export async function requestOwnerWithdrawal({
     p_request_metadata: {
       note: note || null,
     },
+    p_provider_config_id: providerConfig.id,
+    p_provider_account_id: providerConfig.providerAccountId,
+    p_provider_environment: providerConfig.environment,
+    p_provider_config_snapshot: buildPaymentProviderConfigSnapshot(providerConfig),
   });
 
   if (error) {
@@ -1256,6 +1513,9 @@ export async function requestOwnerWithdrawal({
     withdrawalId: queuedWithdrawal?.id || null,
     ownerIds: uniqueOwnerIds,
     payoutMethodId,
+    providerConfigId: providerConfig.id,
+    providerAccountId: providerConfig.providerAccountId,
+    providerEnvironment: providerConfig.environment,
     amountCents,
     idempotencyKey: normalizedIdempotencyKey,
     initialStatus: queuedWithdrawal?.status || null,
@@ -1264,6 +1524,8 @@ export async function requestOwnerWithdrawal({
     queuedWithdrawal?.id && String(queuedWithdrawal?.status || "").trim().toLowerCase() !== "succeeded"
       ? await executeQueuedWithdrawalPixSend(queuedWithdrawal.id, {
           trigger: "request",
+          providerConfig,
+          bindProviderConfigIfMissing: true,
         })
       : mapWithdrawalRow(queuedWithdrawal);
 

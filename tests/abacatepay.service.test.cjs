@@ -11,6 +11,13 @@ async function runCase(name, fn) {
   delete process.env.ABACATEPAY_WEBHOOK_SECRET;
 
   const service = await import("../server/modules/financial/abacatepay.service.js");
+  const providerConfig = {
+    id: "cfg-1",
+    provider: "abacatepay",
+    apiKey: "test-api-key",
+    providerAccountId: "acct-1",
+    environment: "test",
+  };
 
   await runCase("aceita webhook apenas com assinatura quando secret nao esta configurada", () => {
     const rawBody = JSON.stringify({ event: "transfer.completed", id: "evt-1" });
@@ -79,21 +86,20 @@ async function runCase(name, fn) {
     assert.equal(result.allowed, true);
   });
 
-  await runCase("monta URL recomendada do webhook com query string da secret", () => {
+  await runCase("monta URL recomendada do webhook sem expor secrets", () => {
     const config = service.getAbacatepayWebhookConfigStatus({
       origin: "https://alugueis-two.vercel.app/",
     });
 
     assert.equal(
       config.recommendedUrl,
-      "https://alugueis-two.vercel.app/api/webhooks/abacatepay?webhookSecret=whsec_123"
+      "https://alugueis-two.vercel.app/api/webhooks/abacatepay?providerConfigId=<provider_config_id>"
     );
     assert.equal(config.signatureKeyConfigured, true);
     assert.equal(config.secretConfigured, true);
   });
 
   await runCase("envia PIX para terceiro pelo endpoint v2 de payouts", async () => {
-    process.env.ABACATEPAY_API_KEY = "test-api-key";
     const originalFetch = global.fetch;
     let fetchInput = null;
     let fetchInit = null;
@@ -115,8 +121,9 @@ async function runCase(name, fn) {
       };
     };
 
+    let result = null;
     try {
-      await service.sendPixTransfer({
+      result = await service.sendPixTransfer({
         amount: 350,
         externalId: "wdr-123",
         method: "PIX",
@@ -125,12 +132,15 @@ async function runCase(name, fn) {
           type: "CPF",
           key: "12345678901",
         },
+      }, {
+        providerConfig,
       });
     } finally {
       global.fetch = originalFetch;
     }
 
     assert.equal(fetchInput.toString(), "https://api.abacatepay.com/v2/payouts/create");
+    assert.equal(service.getAbacatepayResponseApiVersion(result), 2);
     assert.equal(fetchInit.method, "POST");
     assert.equal(fetchInit.headers.Authorization, "Bearer test-api-key");
     assert.deepEqual(JSON.parse(fetchInit.body), {
@@ -146,7 +156,6 @@ async function runCase(name, fn) {
   });
 
   await runCase("consulta PIX enviado pelo externalId no endpoint v2 de payouts", async () => {
-    process.env.ABACATEPAY_API_KEY = "test-api-key";
     const originalFetch = global.fetch;
     let fetchInput = null;
     let fetchInit = null;
@@ -169,7 +178,7 @@ async function runCase(name, fn) {
     };
 
     try {
-      await service.getPixTransferByExternalId("wdr-123");
+      await service.getPixTransferByExternalId("wdr-123", { providerConfig });
     } finally {
       global.fetch = originalFetch;
     }
@@ -178,8 +187,120 @@ async function runCase(name, fn) {
     assert.equal(fetchInit.method, "GET");
   });
 
-  await runCase("explica incompatibilidade de versao da chave no payout", async () => {
-    process.env.ABACATEPAY_API_KEY = "test-api-key";
+  await runCase("cai para endpoint v1 quando a chave nao aceita payout v2", async () => {
+    const originalFetch = global.fetch;
+    const urls = [];
+
+    global.fetch = async (input) => {
+      urls.push(input.toString());
+      if (input.toString().includes("/v2/")) {
+        return {
+          ok: false,
+          status: 401,
+          statusText: "Unauthorized",
+          json: async () => ({
+            data: null,
+            error: "API key version mismatch",
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          data: {
+            id: "tran_v1",
+            status: "PENDING",
+            externalId: "wdr-123",
+          },
+          error: null,
+        }),
+      };
+    };
+
+    try {
+      const result = await service.sendPixTransfer({
+        amount: 350,
+        externalId: "wdr-123",
+        method: "PIX",
+        pix: {
+          type: "CPF",
+          key: "12345678901",
+        },
+      }, {
+        providerConfig,
+      });
+
+      assert.equal(result.data.id, "tran_v1");
+      assert.deepEqual(urls, [
+        "https://api.abacatepay.com/v2/payouts/create",
+        "https://api.abacatepay.com/v1/withdraw/create",
+      ]);
+      assert.equal(service.getAbacatepayResponseApiVersion(result), 1);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  await runCase("cai para endpoint v1 quando a chave nao aceita pix qrcode v2", async () => {
+    const originalFetch = global.fetch;
+    const calls = [];
+
+    global.fetch = async (input, init) => {
+      calls.push({ url: input.toString(), body: JSON.parse(init.body) });
+      if (input.toString().includes("/v2/")) {
+        return {
+          ok: false,
+          status: 401,
+          statusText: "Unauthorized",
+          json: async () => ({
+            data: null,
+            error: "API key version mismatch",
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          data: {
+            id: "pix_v1",
+            status: "PENDING",
+            amount: 1000,
+            brCode: "000201",
+            brCodeBase64: "data:image/png;base64,abc",
+          },
+          error: null,
+        }),
+      };
+    };
+
+    try {
+      const result = await service.createTransparentPixCharge({
+        amountCents: 1000,
+        description: "Aluguel 01/2026 - Fulano de Tal",
+        expiresInSeconds: 1800,
+        customer: { email: "fulano@example.com" },
+        metadata: { paymentId: "pay-1" },
+        providerConfig,
+      });
+
+      assert.equal(result.data.id, "pix_v1");
+      assert.equal(calls[0].url, "https://api.abacatepay.com/v2/transparents/create");
+      assert.equal(calls[1].url, "https://api.abacatepay.com/v1/pixQrCode/create");
+      assert.deepEqual(calls[1].body, {
+        amount: 1000,
+        expiresIn: 1800,
+        description: "Aluguel 01/2026 - Fulano de Tal".slice(0, 37),
+        metadata: { paymentId: "pay-1" },
+      });
+      assert.equal(service.getAbacatepayResponseApiVersion(result), 1);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  await runCase("explica quando a chave nao aceita nem v2 nem v1", async () => {
     const originalFetch = global.fetch;
 
     global.fetch = async () => ({
@@ -203,8 +324,10 @@ async function runCase(name, fn) {
               type: "CPF",
               key: "12345678901",
             },
+          }, {
+            providerConfig,
           }),
-        /API v2/
+        /v1 e v2/
       );
     } finally {
       global.fetch = originalFetch;

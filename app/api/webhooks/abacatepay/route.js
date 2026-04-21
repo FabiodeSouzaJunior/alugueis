@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import {
   getAbacatepayWebhookConfigStatus,
   sanitizeWebhookAuditInput,
-  validateAbacatepayWebhookRequest,
 } from "@/server/modules/financial/abacatepay.service";
 import { processAbacatepayWebhook } from "@/server/modules/financial/payment-gateway.service";
 import { extractWebhookSignatureFromHeaders } from "@/server/modules/financial/owner-wallet.utils";
@@ -63,26 +62,19 @@ export async function POST(request) {
       return NextResponse.json({ error: "Payload JSON invalido." }, { status: 400 });
     }
 
-    const signatureFromHeader = extractWebhookSignatureFromHeaders(headers);
-    const validation = validateAbacatepayWebhookRequest({
+    const result = await processAbacatepayWebhook({
+      payload,
       rawBody,
-      headers,
-      signatureFromHeader,
+      headers: auditInput.headers,
+      queryParams: auditInput.query,
+      signatureFromHeader: extractWebhookSignatureFromHeaders(headers),
       providedSecret:
         queryParams.webhookSecret ||
         queryParams.secret ||
         queryParams.token ||
         "",
     });
-
-    const result = await processAbacatepayWebhook({
-      payload,
-      rawBody,
-      headers: auditInput.headers,
-      queryParams: auditInput.query,
-      webhookSecretValid: validation.webhookSecretValid,
-      signatureValid: validation.signatureValid,
-    });
+    const validation = result?.validation || {};
 
     logWebhook("info", "processed", {
       eventType: payload?.event || payload?.type || null,
