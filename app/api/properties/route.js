@@ -96,16 +96,21 @@ async function _GET(request, context) {
 async function _POST(request, context) {
   try {
     const body = await request.json();
+    const organizationId = request.auth?.organizationId;
     const id = body.id || generateId();
     const name = String(body.name ?? "").trim() || "Sem nome";
     const unitCount = Math.max(0, Number(body.unitCount) ?? 0);
     const observacoes = body.observacoes != null ? String(body.observacoes) : null;
     const estimatedValue = body.estimatedValue != null && body.estimatedValue !== "" ? Number(body.estimatedValue) : null;
 
+    if (!organizationId) {
+      return NextResponse.json({ error: "Usuário sem organização vinculada" }, { status: 403 });
+    }
+
     await pool.query(
-      `INSERT INTO properties (id, name, unit_count, max_people, current_people, observacoes, estimated_value)
-       VALUES (?, ?, ?, 0, 0, ?, ?)`,
-      [id, name, unitCount, observacoes, estimatedValue]
+      `INSERT INTO properties (id, name, unit_count, max_people, current_people, observacoes, estimated_value, organization_id)
+       VALUES (?, ?, ?, 0, 0, ?, ?, ?)`,
+      [id, name, unitCount, observacoes, estimatedValue, organizationId]
     );
 
     const [rows] = await pool.query("SELECT * FROM properties WHERE id = ?", [id]);

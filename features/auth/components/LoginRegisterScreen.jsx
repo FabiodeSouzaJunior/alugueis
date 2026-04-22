@@ -6,13 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,7 +17,7 @@ import { useRegisterForm } from "../hooks/useRegisterForm";
 export default function LoginRegisterScreen() {
   const registerForm = useRegisterForm();
   const loginForm = useLoginForm();
-  const [tab, setTab] = React.useState("register");
+  const [tab, setTab] = React.useState("login");
 
   const showPasswordStep = !!registerForm.organizationId;
 
@@ -32,14 +26,13 @@ export default function LoginRegisterScreen() {
       <Card className="w-full max-w-md shadow-sm border-border/70 bg-card/80 backdrop-blur-sm">
         <CardHeader className="space-y-2">
           <CardTitle className="text-2xl">Entrar ou criar conta</CardTitle>
-          <CardDescription>Multi-tenant com segurança por membership e RLS.</CardDescription>
         </CardHeader>
 
         <CardContent>
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="register">Criar conta</TabsTrigger>
               <TabsTrigger value="login">Entrar</TabsTrigger>
+              <TabsTrigger value="register">Criar conta</TabsTrigger>
             </TabsList>
 
             <TabsContent value="register" className="mt-6">
@@ -230,6 +223,15 @@ export default function LoginRegisterScreen() {
 
                 <Button type="submit" className="w-full" disabled={loginForm.submitting}>
                   {loginForm.submitting ? "Entrando..." : "Entrar"}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="link"
+                  className="w-full"
+                  onClick={() => setTab("register")}
+                >
+                  Criar conta
                 </Button>
               </form>
             </TabsContent>
