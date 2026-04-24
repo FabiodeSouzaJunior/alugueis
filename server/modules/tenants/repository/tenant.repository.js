@@ -20,6 +20,10 @@ function hasCompleteTenantSupport(support) {
   return !!(
     support?.hasDocumentNumber &&
     support?.hasAddress &&
+    support?.hasAddressStreet &&
+    support?.hasAddressNumber &&
+    support?.hasAddressNeighborhood &&
+    support?.hasAddressZipCode &&
     support?.hasBirthDate &&
     support?.hasEmail &&
     support?.hasIsPaymentResponsible &&
@@ -48,6 +52,10 @@ export async function getTenantColumnSupport() {
     paymentDayProbe,
     organizationProbe,
     iptuValueProbe,
+    addressStreetProbe,
+    addressNumberProbe,
+    addressNeighborhoodProbe,
+    addressZipCodeProbe,
   ] = await Promise.all([
     supabase.from("tenants").select("document_number").limit(1),
     supabase.from("tenants").select("address").limit(1),
@@ -57,11 +65,19 @@ export async function getTenantColumnSupport() {
     supabase.from("tenants").select("payment_day").limit(1),
     supabase.from("tenants").select("organization_id").limit(1),
     supabase.from("tenants").select("iptu_value").limit(1),
+    supabase.from("tenants").select("address_street").limit(1),
+    supabase.from("tenants").select("address_number").limit(1),
+    supabase.from("tenants").select("address_neighborhood").limit(1),
+    supabase.from("tenants").select("address_zip_code").limit(1),
   ]);
 
   tenantColumnSupport = {
     hasDocumentNumber: !documentProbe.error,
     hasAddress: !addressProbe.error,
+    hasAddressStreet: !addressStreetProbe.error,
+    hasAddressNumber: !addressNumberProbe.error,
+    hasAddressNeighborhood: !addressNeighborhoodProbe.error,
+    hasAddressZipCode: !addressZipCodeProbe.error,
     hasBirthDate: !birthDateProbe.error,
     hasEmail: !emailProbe.error,
     hasIsPaymentResponsible: !paymentResponsibleProbe.error,
@@ -331,6 +347,22 @@ function buildTenantInsertData(payload, support, organizationId) {
     columns.push("address");
     values.push(payload.address);
   }
+  if (support.hasAddressStreet) {
+    columns.push("address_street");
+    values.push(payload.addressStreet);
+  }
+  if (support.hasAddressNumber) {
+    columns.push("address_number");
+    values.push(payload.addressNumber);
+  }
+  if (support.hasAddressNeighborhood) {
+    columns.push("address_neighborhood");
+    values.push(payload.addressNeighborhood ?? payload.addressDistrict);
+  }
+  if (support.hasAddressZipCode) {
+    columns.push("address_zip_code");
+    values.push(payload.addressZipCode);
+  }
   if (support.hasBirthDate) {
     columns.push("birth_date");
     values.push(payload.birthDate);
@@ -386,6 +418,22 @@ function buildTenantUpdateData(payload, support, organizationId) {
   if (support.hasAddress) {
     assignments.push("address = ?");
     values.push(payload.address);
+  }
+  if (support.hasAddressStreet) {
+    assignments.push("address_street = ?");
+    values.push(payload.addressStreet);
+  }
+  if (support.hasAddressNumber) {
+    assignments.push("address_number = ?");
+    values.push(payload.addressNumber);
+  }
+  if (support.hasAddressNeighborhood) {
+    assignments.push("address_neighborhood = ?");
+    values.push(payload.addressNeighborhood ?? payload.addressDistrict);
+  }
+  if (support.hasAddressZipCode) {
+    assignments.push("address_zip_code = ?");
+    values.push(payload.addressZipCode);
   }
   if (support.hasBirthDate) {
     assignments.push("birth_date = ?");
@@ -595,6 +643,10 @@ export async function getSchemaSupportSummary() {
   return {
     hasDocumentNumber: tenantSupport.hasDocumentNumber,
     hasAddress: tenantSupport.hasAddress,
+    hasAddressStreet: tenantSupport.hasAddressStreet,
+    hasAddressNumber: tenantSupport.hasAddressNumber,
+    hasAddressNeighborhood: tenantSupport.hasAddressNeighborhood,
+    hasAddressZipCode: tenantSupport.hasAddressZipCode,
     hasBirthDate: tenantSupport.hasBirthDate,
     hasEmail: tenantSupport.hasEmail,
     hasIsPaymentResponsible: tenantSupport.hasIsPaymentResponsible,

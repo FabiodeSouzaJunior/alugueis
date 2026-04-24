@@ -115,7 +115,11 @@ export function createTenantWriteDto(payload = {}, options = {}) {
     payload?.addressNumber ?? payload?.address_number ?? parsedAddress.number
   );
   const addressDistrict = normalizeNullableString(
-    payload?.addressDistrict ?? payload?.address_district ?? parsedAddress.district
+    payload?.addressDistrict ??
+      payload?.addressNeighborhood ??
+      payload?.address_district ??
+      payload?.address_neighborhood ??
+      parsedAddress.district
   );
   const addressZipCode = normalizeZipCodeField(
     payload?.addressZipCode ?? payload?.address_zip_code ?? parsedAddress.zipCode
@@ -240,6 +244,7 @@ export function createTenantWriteDto(payload = {}, options = {}) {
     address,
     addressStreet,
     addressNumber,
+    addressNeighborhood: addressDistrict,
     addressDistrict,
     addressZipCode,
     birthDate,

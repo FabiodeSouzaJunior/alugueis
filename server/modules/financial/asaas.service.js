@@ -171,10 +171,42 @@ function normalizeCustomerPayload(customer = {}) {
     );
   }
 
+  const address = String(customer?.address || customer?.street || "").trim();
+  const addressNumber = String(
+    customer?.addressNumber ?? customer?.number ?? customer?.streetNumber ?? ""
+  )
+    .trim()
+    .slice(0, 20);
+  const province = String(
+    customer?.province ?? customer?.neighborhood ?? customer?.district ?? ""
+  )
+    .trim()
+    .slice(0, 255);
+  const postalCode = onlyDigits(customer?.postalCode || customer?.zipCode || customer?.zipcode);
+
+  const missingAddressFields = [];
+  if (!address) missingAddressFields.push("logradouro");
+  if (!addressNumber) missingAddressFields.push("numero");
+  if (!province) missingAddressFields.push("bairro");
+  if (postalCode.length !== 8) missingAddressFields.push("CEP");
+
+  if (missingAddressFields.length > 0) {
+    throw Object.assign(
+      new Error(
+        `Para criar cobranca ASAAS, informe no cadastro do inquilino: ${missingAddressFields.join(", ")}.`
+      ),
+      { status: 400, code: "asaas_customer_address_required" }
+    );
+  }
+
   const payload = {
     name,
     cpfCnpj,
     notificationDisabled: true,
+    address,
+    addressNumber,
+    province,
+    postalCode,
   };
 
   const email = String(customer?.email || "").trim();

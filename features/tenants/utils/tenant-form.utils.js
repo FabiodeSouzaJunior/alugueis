@@ -91,6 +91,18 @@ export function isValidTenantDocument(documentNumber) {
 
 export function createTenantFormValues(tenant, initialValues = {}) {
   const structuredAddress = parseStructuredTenantAddress(tenant?.address || "");
+  const tenantAddressStreet =
+    tenant?.addressStreet ?? tenant?.address_street ?? structuredAddress.street;
+  const tenantAddressNumber =
+    tenant?.addressNumber ?? tenant?.address_number ?? structuredAddress.number;
+  const tenantAddressDistrict =
+    tenant?.addressDistrict ??
+    tenant?.addressNeighborhood ??
+    tenant?.address_district ??
+    tenant?.address_neighborhood ??
+    structuredAddress.district;
+  const tenantAddressZipCode =
+    tenant?.addressZipCode ?? tenant?.address_zip_code ?? structuredAddress.zipCode;
   const currentPropertyId = tenant?.propertyId ?? tenant?.property_id ?? "";
   const currentResponsible =
     typeof tenant?.isPaymentResponsible === "boolean"
@@ -106,10 +118,10 @@ export function createTenantFormValues(tenant, initialValues = {}) {
     name: tenant?.name || "",
     phone: tenant?.phone || "",
     documentNumber: tenant?.documentNumber || tenant?.document_number || "",
-    addressStreet: structuredAddress.street,
-    addressNumber: structuredAddress.number,
-    addressDistrict: structuredAddress.district,
-    addressZipCode: structuredAddress.zipCode,
+    addressStreet: tenantAddressStreet,
+    addressNumber: tenantAddressNumber,
+    addressDistrict: tenantAddressDistrict,
+    addressZipCode: tenantAddressZipCode,
     email: tenant?.email || "",
     isPaymentResponsible: currentResponsible,
     kitnetNumber: String(tenant?.kitnetNumber ?? tenant?.kitnet_number ?? ""),
@@ -252,6 +264,7 @@ export function buildTenantPayload(form) {
     documentNumber: normalizeNullableString(form.documentNumber),
     addressStreet: normalizeNullableString(form.addressStreet),
     addressNumber: normalizeNullableString(form.addressNumber),
+    addressNeighborhood: normalizeNullableString(form.addressDistrict),
     addressDistrict: normalizeNullableString(form.addressDistrict),
     addressZipCode: normalizeZipCode(form.addressZipCode),
     address:

@@ -15,6 +15,7 @@ import {
 import {
   createProviderPixCharge,
   getProviderResponseApiVersion,
+  PAYMENT_PROVIDER_ASAAS,
   sanitizeProviderCheckoutPayload,
 } from "@/server/modules/financial/payment-provider-gateway.service";
 import {
@@ -99,15 +100,23 @@ function buildCheckoutDescription(paymentRow, tenantRow) {
   return `Pagamento de aluguel - ${tenantName}`.slice(0, 120);
 }
 
-function buildCheckoutCustomer(tenantRow) {
+function buildCheckoutCustomer(tenantRow, provider = null) {
   const email = tenantRow?.email ? String(tenantRow.email).trim() : "";
-  if (!email) return undefined;
-
-  const customer = { email };
+  const customer = {};
   if (tenantRow?.name) customer.name = tenantRow.name;
   if (tenantRow?.document_number) customer.taxId = tenantRow.document_number;
   if (tenantRow?.phone) customer.cellphone = tenantRow.phone;
-  return customer;
+  if (email) customer.email = email;
+  if (tenantRow?.address_street) customer.address = tenantRow.address_street;
+  if (tenantRow?.address_number) customer.addressNumber = tenantRow.address_number;
+  if (tenantRow?.address_neighborhood) customer.province = tenantRow.address_neighborhood;
+  if (tenantRow?.address_zip_code) customer.postalCode = tenantRow.address_zip_code;
+
+  if (provider !== PAYMENT_PROVIDER_ASAAS && !email) {
+    return undefined;
+  }
+
+  return Object.keys(customer).length > 0 ? customer : undefined;
 }
 
 function mapCheckoutRow(row) {
@@ -158,7 +167,9 @@ async function readAccessiblePayment(paymentId) {
 
   const { data: tenantRow, error: tenantError } = await supabase
     .from("tenants")
-    .select("id, name, email, phone, document_number, property_id, organization_id, payment_day")
+    .select(
+      "id, name, email, phone, document_number, property_id, organization_id, payment_day, address_street, address_number, address_neighborhood, address_zip_code"
+    )
     .eq("id", paymentRow.tenant_id)
     .maybeSingle();
 
@@ -357,7 +368,7 @@ export async function createPaymentTransparentCheckout({
       amountCents: openAmountCents,
       description: buildCheckoutDescription(paymentRow, tenantRow),
       expiresInSeconds: 1800,
-      customer: buildCheckoutCustomer(tenantRow),
+      customer: buildCheckoutCustomer(tenantRow, provider),
       dueDate: paymentRow.due_date,
       metadata: {
         paymentId: paymentRow.id,

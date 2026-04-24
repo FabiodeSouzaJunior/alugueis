@@ -58,6 +58,10 @@ async function ensureTenantSchemaReady(payload) {
 
   if (!support.hasDocumentNumber) missingColumns.push("tenants.document_number");
   if (!support.hasAddress) missingColumns.push("tenants.address");
+  if (!support.hasAddressStreet) missingColumns.push("tenants.address_street");
+  if (!support.hasAddressNumber) missingColumns.push("tenants.address_number");
+  if (!support.hasAddressNeighborhood) missingColumns.push("tenants.address_neighborhood");
+  if (!support.hasAddressZipCode) missingColumns.push("tenants.address_zip_code");
   if (!support.hasBirthDate) missingColumns.push("tenants.birth_date");
   if (!support.hasEmail) missingColumns.push("tenants.email");
   if (!support.hasIsPaymentResponsible) missingColumns.push("tenants.is_payment_responsible");
