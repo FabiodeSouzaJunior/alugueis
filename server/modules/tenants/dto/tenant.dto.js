@@ -8,6 +8,11 @@ import {
   isValidPaymentDay,
   normalizePaymentDay,
 } from "@/lib/payment-dates";
+import {
+  buildStructuredTenantAddress,
+  normalizeZipCode,
+  parseStructuredTenantAddress,
+} from "@/lib/tenant-address";
 
 const TENANT_STATUS_VALUES = new Set(["ativo", "saiu"]);
 
@@ -71,6 +76,10 @@ function normalizeBoolean(value) {
   return value === true || value === 1 || value === "1" || value === "true";
 }
 
+function normalizeZipCodeField(value) {
+  return normalizeNullableString(normalizeZipCode(value));
+}
+
 function normalizeDate(value, fieldLabel, { required = false } = {}) {
   const normalized = normalizeNullableString(value);
   if (!normalized) {
@@ -92,13 +101,35 @@ function normalizeDate(value, fieldLabel, { required = false } = {}) {
   return normalized;
 }
 
-export function createTenantWriteDto(payload = {}) {
+export function createTenantWriteDto(payload = {}, options = {}) {
+  const parsedAddress = parseStructuredTenantAddress(payload?.address);
   const name = normalizeNullableString(payload?.name);
   const phone = normalizeNullableString(payload?.phone);
   const documentNumber = normalizeNullableString(
     payload?.documentNumber ?? payload?.document_number
   );
-  const address = normalizeNullableString(payload?.address);
+  const addressStreet = normalizeNullableString(
+    payload?.addressStreet ?? payload?.address_street ?? parsedAddress.street
+  );
+  const addressNumber = normalizeNullableString(
+    payload?.addressNumber ?? payload?.address_number ?? parsedAddress.number
+  );
+  const addressDistrict = normalizeNullableString(
+    payload?.addressDistrict ?? payload?.address_district ?? parsedAddress.district
+  );
+  const addressZipCode = normalizeZipCodeField(
+    payload?.addressZipCode ?? payload?.address_zip_code ?? parsedAddress.zipCode
+  );
+  const address =
+    normalizeNullableString(payload?.address) ||
+    normalizeNullableString(
+      buildStructuredTenantAddress({
+        street: addressStreet,
+        number: addressNumber,
+        district: addressDistrict,
+        zipCode: addressZipCode,
+      })
+    );
   const birthDate = normalizeDate(payload?.birthDate ?? payload?.birth_date, "Data de nascimento");
   const email = normalizeEmail(payload?.email);
   const isPaymentResponsible = normalizeBoolean(
@@ -133,6 +164,7 @@ export function createTenantWriteDto(payload = {}) {
   const iptuInstallments = Number.isFinite(rawIptuInstallments) && rawIptuInstallments >= 1 && rawIptuInstallments <= 12
     ? rawIptuInstallments
     : 12;
+  const requiresAsaasTenantFields = options?.requiresAsaasTenantFields === true;
 
   if (!name) {
     throw buildValidationError("Nome completo e obrigatorio.");
@@ -145,8 +177,36 @@ export function createTenantWriteDto(payload = {}) {
     throw buildValidationError("Informe um telefone valido com DDD.");
   }
 
-  if (documentNumber && !isValidDocumentNumber(documentNumber)) {
+  if (requiresAsaasTenantFields && !documentNumber) {
+    throw buildValidationError("CPF e obrigatorio quando o gateway ASAAS estiver ativo.");
+  }
+
+  if (requiresAsaasTenantFields && !isValidCpf(documentNumber || "")) {
+    throw buildValidationError("Informe um CPF valido.");
+  }
+
+  if (!requiresAsaasTenantFields && documentNumber && !isValidDocumentNumber(documentNumber)) {
     throw buildValidationError("Informe um CPF ou documento valido.");
+  }
+
+  if (requiresAsaasTenantFields && !addressStreet) {
+    throw buildValidationError("Logradouro e obrigatorio quando o gateway ASAAS estiver ativo.");
+  }
+
+  if (requiresAsaasTenantFields && !addressNumber) {
+    throw buildValidationError("Numero do endereco e obrigatorio quando o gateway ASAAS estiver ativo.");
+  }
+
+  if (requiresAsaasTenantFields && !addressDistrict) {
+    throw buildValidationError("Bairro e obrigatorio quando o gateway ASAAS estiver ativo.");
+  }
+
+  if (requiresAsaasTenantFields && !addressZipCode) {
+    throw buildValidationError("CEP e obrigatorio quando o gateway ASAAS estiver ativo.");
+  }
+
+  if (addressZipCode && digitsOnly(addressZipCode).length !== 8) {
+    throw buildValidationError("Informe um CEP valido com 8 digitos.");
   }
 
   if (birthDate && new Date(`${birthDate}T00:00:00`).getTime() > Date.now()) {
@@ -178,6 +238,10 @@ export function createTenantWriteDto(payload = {}) {
     phone,
     documentNumber,
     address,
+    addressStreet,
+    addressNumber,
+    addressDistrict,
+    addressZipCode,
     birthDate,
     email: email || null,
     isPaymentResponsible,

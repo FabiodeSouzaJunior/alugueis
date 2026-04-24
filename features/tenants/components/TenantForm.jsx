@@ -57,8 +57,10 @@ export function TenantForm({
     handleUnitChange,
     handlePaymentResponsibleChange,
     handleIptuChange,
+    handleZipCodeChange,
     iptuMonthlyValue,
     computedRentWithIptu,
+    registrationRequirements,
     submit,
   } = useTenantForm({ tenant, initialValues });
 
@@ -74,6 +76,7 @@ export function TenantForm({
   } = useTenantContract(tenant?.id, tenant);
 
   const errorSummaryRef = useRef(null);
+  const requiresAsaasTenantFields = registrationRequirements.requiresAsaasTenantFields;
 
   const errorMessages = Object.values(errors);
 
@@ -129,6 +132,13 @@ export function TenantForm({
             </p>
           </div>
 
+          {requiresAsaasTenantFields ? (
+            <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+              O gateway ativo desta organizacao e o ASAAS. Nome completo, CPF, logradouro, numero,
+              bairro e CEP passam a ser obrigatorios no cadastro.
+            </div>
+          ) : null}
+
           <div className="grid gap-4 xl:grid-cols-2">
             <div className="grid gap-2">
               <RequiredLabel htmlFor="tenant-name">Nome completo</RequiredLabel>
@@ -165,13 +175,18 @@ export function TenantForm({
 
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="grid gap-2">
-              <Label htmlFor="tenant-document">CPF / Documento</Label>
+              {requiresAsaasTenantFields ? (
+                <RequiredLabel htmlFor="tenant-document">CPF</RequiredLabel>
+              ) : (
+                <Label htmlFor="tenant-document">CPF / Documento</Label>
+              )}
               <Input
                 id="tenant-document"
                 value={form.documentNumber}
                 onChange={(event) => setFieldValue("documentNumber", event.target.value)}
-                placeholder="CPF ou documento"
+                placeholder={requiresAsaasTenantFields ? "000.000.000-00" : "CPF ou documento"}
                 aria-invalid={!!errors.documentNumber}
+                required={requiresAsaasTenantFields}
               />
               <FieldError message={errors.documentNumber} />
             </div>
@@ -197,6 +212,79 @@ export function TenantForm({
                 Obrigatorio para marcar este inquilino como responsavel pelo pagamento.
               </p>
               <FieldError message={errors.email} tone="warning" />
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_180px]">
+            <div className="grid gap-2">
+              {requiresAsaasTenantFields ? (
+                <RequiredLabel htmlFor="tenant-address-street">Logradouro</RequiredLabel>
+              ) : (
+                <Label htmlFor="tenant-address-street">Logradouro</Label>
+              )}
+              <Input
+                id="tenant-address-street"
+                value={form.addressStreet}
+                onChange={(event) => setFieldValue("addressStreet", event.target.value)}
+                placeholder="Rua, avenida ou logradouro"
+                aria-invalid={!!errors.addressStreet}
+                required={requiresAsaasTenantFields}
+              />
+              <FieldError message={errors.addressStreet} />
+            </div>
+
+            <div className="grid gap-2">
+              {requiresAsaasTenantFields ? (
+                <RequiredLabel htmlFor="tenant-address-number">Numero</RequiredLabel>
+              ) : (
+                <Label htmlFor="tenant-address-number">Numero</Label>
+              )}
+              <Input
+                id="tenant-address-number"
+                value={form.addressNumber}
+                onChange={(event) => setFieldValue("addressNumber", event.target.value)}
+                placeholder="Numero"
+                aria-invalid={!!errors.addressNumber}
+                required={requiresAsaasTenantFields}
+              />
+              <FieldError message={errors.addressNumber} />
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_180px]">
+            <div className="grid gap-2">
+              {requiresAsaasTenantFields ? (
+                <RequiredLabel htmlFor="tenant-address-district">Bairro</RequiredLabel>
+              ) : (
+                <Label htmlFor="tenant-address-district">Bairro</Label>
+              )}
+              <Input
+                id="tenant-address-district"
+                value={form.addressDistrict}
+                onChange={(event) => setFieldValue("addressDistrict", event.target.value)}
+                placeholder="Bairro"
+                aria-invalid={!!errors.addressDistrict}
+                required={requiresAsaasTenantFields}
+              />
+              <FieldError message={errors.addressDistrict} />
+            </div>
+
+            <div className="grid gap-2">
+              {requiresAsaasTenantFields ? (
+                <RequiredLabel htmlFor="tenant-address-zip">CEP</RequiredLabel>
+              ) : (
+                <Label htmlFor="tenant-address-zip">CEP</Label>
+              )}
+              <Input
+                id="tenant-address-zip"
+                value={form.addressZipCode}
+                onChange={(event) => handleZipCodeChange(event.target.value)}
+                placeholder="00000-000"
+                inputMode="numeric"
+                aria-invalid={!!errors.addressZipCode}
+                required={requiresAsaasTenantFields}
+              />
+              <FieldError message={errors.addressZipCode} />
             </div>
           </div>
         </section>
@@ -454,7 +542,7 @@ export function TenantForm({
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancelar
         </Button>
-        <Button type="submit" disabled={submitting || contractUploading}>
+        <Button type="submit" disabled={submitting || contractUploading || registrationRequirements.loading}>
           {submitLabel || (tenant ? "Salvar" : "Adicionar")}
         </Button>
       </DialogFooter>

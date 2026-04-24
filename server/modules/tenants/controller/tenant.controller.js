@@ -3,6 +3,8 @@ import {
   createTenantListDto,
   createTenantWriteDto,
 } from "../dto/tenant.dto";
+import { getActiveGatewayProviderSummaryByOrganization } from "@/features/pagamentos/provider-configs";
+import { PAYMENT_PROVIDER_ASAAS } from "@/server/modules/financial/payment-provider-gateway.service";
 import {
   createTenantItem,
   deleteTenantItem,
@@ -27,6 +29,21 @@ async function readJson(request) {
   } catch (_) {
     return {};
   }
+}
+
+async function resolveTenantDtoOptions(auth = {}) {
+  const organizationId = auth?.organizationId || null;
+  if (!organizationId) {
+    return { requiresAsaasTenantFields: false };
+  }
+
+  const activeProvider = await getActiveGatewayProviderSummaryByOrganization(organizationId).catch(
+    () => null
+  );
+
+  return {
+    requiresAsaasTenantFields: activeProvider?.provider === PAYMENT_PROVIDER_ASAAS,
+  };
 }
 
 export async function handleListTenants(request) {
@@ -57,7 +74,7 @@ export async function handleGetTenant(_request, tenantId) {
 export async function handleCreateTenant(request) {
   try {
     const payload = await readJson(request);
-    const dto = createTenantWriteDto(payload);
+    const dto = createTenantWriteDto(payload, await resolveTenantDtoOptions(request.auth || {}));
     const createdTenant = await createTenantItem({
       ...dto,
       id: payload?.id,
@@ -72,7 +89,7 @@ export async function handleUpdateTenant(request, tenantId) {
   try {
     const id = createTenantIdDto(tenantId);
     const payload = await readJson(request);
-    const dto = createTenantWriteDto(payload);
+    const dto = createTenantWriteDto(payload, await resolveTenantDtoOptions(request.auth || {}));
     const updatedTenant = await updateTenantItem(id, dto, request.auth || {});
     return buildResponse(200, updatedTenant);
   } catch (error) {

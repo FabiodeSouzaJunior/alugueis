@@ -257,6 +257,11 @@ export async function getActiveGatewayProviderConfigByOrganization(organizationI
   });
 }
 
+export async function getActiveGatewayProviderSummaryByOrganization(organizationId) {
+  const row = await fetchActiveProviderConfigRowByOrganization(organizationId);
+  return row ? mapProviderConfigSafeRow(row) : null;
+}
+
 export async function getActivePayoutProviderConfigByOrganization(
   organizationId,
   provider = DEFAULT_PROVIDER

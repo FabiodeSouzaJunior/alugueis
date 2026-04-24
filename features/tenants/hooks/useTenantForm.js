@@ -11,7 +11,10 @@ import {
   normalizeTenantEmail,
   validateTenantForm,
 } from "../utils/tenant-form.utils";
-import { fetchTenantPropertyUnits } from "../services/tenants.service";
+import {
+  fetchTenantPropertyUnits,
+  fetchTenantRegistrationRequirements,
+} from "../services/tenants.service";
 
 export function useTenantForm({ tenant, initialValues = {} }) {
   const initialValuesKey = JSON.stringify(initialValues || {});
@@ -20,6 +23,12 @@ export function useTenantForm({ tenant, initialValues = {} }) {
   const [errors, setErrors] = useState({});
   const [units, setUnits] = useState([]);
   const [loadingUnits, setLoadingUnits] = useState(false);
+  const [registrationRequirements, setRegistrationRequirements] = useState({
+    loading: true,
+    activePaymentProvider: null,
+    activePaymentProviderLabel: null,
+    requiresAsaasTenantFields: false,
+  });
   const [initialPropertyId, setInitialPropertyId] = useState(
     () => createTenantFormValues(tenant, stableInitialValues).propertyId || null
   );
@@ -30,6 +39,34 @@ export function useTenantForm({ tenant, initialValues = {} }) {
     setErrors({});
     setInitialPropertyId(nextValues.propertyId || null);
   }, [stableInitialValues, tenant]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchTenantRegistrationRequirements()
+      .then((data) => {
+        if (cancelled) return;
+        setRegistrationRequirements({
+          loading: false,
+          activePaymentProvider: data?.activePaymentProvider || null,
+          activePaymentProviderLabel: data?.activePaymentProviderLabel || null,
+          requiresAsaasTenantFields: data?.requiresAsaasTenantFields === true,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRegistrationRequirements({
+          loading: false,
+          activePaymentProvider: null,
+          activePaymentProviderLabel: null,
+          requiresAsaasTenantFields: false,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!form.propertyId) {
@@ -166,6 +203,16 @@ export function useTenantForm({ tenant, initialValues = {} }) {
     setFieldValue("iptuValue", nextValue);
   }
 
+  function handleZipCodeChange(value) {
+    const digits = String(value || "").replace(/\D/g, "").slice(0, 8);
+    if (!digits) {
+      setFieldValue("addressZipCode", "");
+      return;
+    }
+    const formatted = digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+    setFieldValue("addressZipCode", formatted);
+  }
+
   const iptuMonthlyValue = computeIptuMonthlyValue(form);
   const computedRentWithIptu = (() => {
     const rawRent = String(form.rentValue || "").replace(/\D/g, "");
@@ -175,7 +222,7 @@ export function useTenantForm({ tenant, initialValues = {} }) {
 
   function submit(event, onSave) {
     event?.preventDefault?.();
-    const nextErrors = validateTenantForm(form);
+    const nextErrors = validateTenantForm(form, registrationRequirements);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
     onSave(buildTenantPayload(form));
@@ -192,8 +239,10 @@ export function useTenantForm({ tenant, initialValues = {} }) {
     handleUnitChange,
     handlePaymentResponsibleChange,
     handleIptuChange,
+    handleZipCodeChange,
     iptuMonthlyValue,
     computedRentWithIptu,
+    registrationRequirements,
     submit,
   };
 }

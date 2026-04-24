@@ -41,6 +41,13 @@ export async function fetchTenants(params = {}) {
   return handleResponse(response);
 }
 
+export async function fetchTenantRegistrationRequirements() {
+  const response = await fetch(`${BASE}/api/tenants/registration-requirements`, {
+    headers: await authHeaders(),
+  });
+  return handleResponse(response);
+}
+
 export async function createTenant(payload) {
   const response = await fetch(`${BASE}/api/tenants`, {
     method: "POST",
