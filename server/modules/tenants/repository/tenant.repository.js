@@ -205,13 +205,24 @@ async function enrichTenantsWithUnitId(tenants) {
   }
 }
 
-export async function listTenants({ propertyId } = {}) {
+export async function listTenants({ propertyId, organizationId } = {}) {
   let sql = "SELECT * FROM tenants";
   const args = [];
 
+  const where = [];
+
   if (propertyId) {
-    sql += " WHERE property_id = ?";
+    where.push("property_id = ?");
     args.push(propertyId);
+  }
+
+  if (organizationId) {
+    where.push("organization_id = ?");
+    args.push(organizationId);
+  }
+
+  if (where.length > 0) {
+    sql += ` WHERE ${where.join(" AND ")}`;
   }
 
   sql += " ORDER BY name";
@@ -220,19 +231,34 @@ export async function listTenants({ propertyId } = {}) {
   return enrichTenantsWithUnitId(tenants);
 }
 
-export async function findTenantById(id) {
-  const [rows] = await pool.query("SELECT * FROM tenants WHERE id = ?", [id]);
+export async function findTenantById(id, { organizationId = null } = {}) {
+  const args = [id];
+  let sql = "SELECT * FROM tenants WHERE id = ?";
+  if (organizationId) {
+    sql += " AND organization_id = ?";
+    args.push(organizationId);
+  }
+  const [rows] = await pool.query(sql, args);
   const tenant = rowToTenant(rows?.[0] || null);
   if (!tenant) return null;
   const [enriched] = await enrichTenantsWithUnitId([tenant]);
   return enriched;
 }
 
-export async function findTenantByEmail(email, { excludeTenantId = null } = {}) {
+export async function findTenantByEmail(
+  email,
+  { excludeTenantId = null, organizationId = null } = {}
+) {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!normalizedEmail) return null;
 
-  const [rows] = await pool.query("SELECT * FROM tenants WHERE email = ?", [normalizedEmail]);
+  const args = [normalizedEmail];
+  let sql = "SELECT * FROM tenants WHERE email = ?";
+  if (organizationId) {
+    sql += " AND organization_id = ?";
+    args.push(organizationId);
+  }
+  const [rows] = await pool.query(sql, args);
   const matchedRow = (rows || []).find((row) => {
     const rowId = row?.id ? String(row.id) : null;
     return !excludeTenantId || rowId !== String(excludeTenantId);
@@ -407,8 +433,14 @@ export async function updateTenantRecord(id, payload, organizationId) {
   );
 }
 
-export async function deleteTenantRecord(id) {
-  const [result] = await pool.query("DELETE FROM tenants WHERE id = ?", [id]);
+export async function deleteTenantRecord(id, { organizationId = null } = {}) {
+  const args = [id];
+  let sql = "DELETE FROM tenants WHERE id = ?";
+  if (organizationId) {
+    sql += " AND organization_id = ?";
+    args.push(organizationId);
+  }
+  const [result] = await pool.query(sql, args);
   return result?.affectedRows || 0;
 }
 

@@ -1,14 +1,10 @@
 import { getServiceRoleClient, getSupabaseClient } from "@/database/supabaseClient";
 import {
-  buildAbacatePixTransferPayload,
-  extractAbacatepayExternalId,
   MIN_WITHDRAWAL_CENTS,
   centsToAmount,
-  mapAbacatepixTransferStatusToWithdrawalResolution,
   mapWithdrawalStatusLabel,
   maskPixKey,
   maskTaxId,
-  normalizeAbacatepayEventType,
   normalizePixKeyType,
   normalizeTaxId,
   parseCurrencyInputToCents,
@@ -17,10 +13,18 @@ import {
 } from "@/server/modules/financial/owner-wallet.utils";
 import { shouldDisplayOwnerLedgerEntry } from "@/server/modules/financial/owner-wallet.rules";
 import {
-  getPixTransferByExternalId,
-  sanitizePixTransferResponse,
-  sendPixTransfer,
-} from "@/server/modules/financial/abacatepay.service";
+  buildProviderPixTransferPayload,
+  extractProviderTransferExternalId,
+  extractProviderTransferReferenceId,
+  getPaymentProviderLabel,
+  getProviderPixTransferByExternalId,
+  isProviderWithdrawalEvent,
+  mapProviderPixTransferStatusToWithdrawalResolution,
+  normalizePaymentProvider,
+  normalizeProviderWithdrawalEventType,
+  sanitizeProviderPixTransferResponse,
+  sendProviderPixTransfer,
+} from "@/server/modules/financial/payment-provider-gateway.service";
 import {
   buildPaymentProviderConfigSnapshot,
   getActivePayoutProviderConfigByOrganization,
@@ -218,6 +222,7 @@ function isProviderConfigurationError(error) {
     error?.code === "provider_config_api_key_missing" ||
     error?.code === "provider_config_encryption_key_missing" ||
     message.includes("Configuracao AbacatePay") ||
+    message.includes("Configuracao ASAAS") ||
     message.includes("nao configurada")
   );
 }
@@ -549,8 +554,9 @@ async function fetchWithdrawalRowForProviderWebhook(
 }
 
 function ensureProviderConfigOrganization(providerConfig = {}, organizationId = null) {
+  const providerLabel = getPaymentProviderLabel(providerConfig?.provider);
   if (!providerConfig?.id) {
-    throw Object.assign(new Error("Configuracao AbacatePay nao encontrada."), {
+    throw Object.assign(new Error(`Configuracao ${providerLabel} nao encontrada.`), {
       status: 404,
       code: "provider_config_not_found",
     });
@@ -561,7 +567,7 @@ function ensureProviderConfigOrganization(providerConfig = {}, organizationId = 
     providerConfig.organizationId &&
     String(providerConfig.organizationId) !== String(organizationId)
   ) {
-    throw Object.assign(new Error("Configuracao AbacatePay nao pertence a organizacao do saque."), {
+    throw Object.assign(new Error(`Configuracao ${providerLabel} nao pertence a organizacao do saque.`), {
       status: 403,
       code: "provider_config_organization_mismatch",
     });
@@ -618,7 +624,7 @@ async function resolveWithdrawalProviderConfig(
   if (withdrawalRow.provider_config_id) {
     const providerConfig = await getPaymentProviderConfigById(
       withdrawalRow.provider_config_id,
-      "abacatepay"
+      null
     );
     ensureProviderConfigOrganization(providerConfig, withdrawalRow.organization_id);
     const boundWithdrawalRow = await bindProviderConfigToWithdrawal(
@@ -638,7 +644,7 @@ async function resolveWithdrawalProviderConfig(
     return { providerConfig: fallbackProviderConfig, withdrawalRow: boundWithdrawalRow };
   }
 
-  throw Object.assign(new Error("Saque sem configuracao AbacatePay vinculada."), {
+  throw Object.assign(new Error("Saque sem configuracao de gateway vinculada."), {
     status: 409,
     code: "provider_config_missing_on_withdrawal",
   });
@@ -713,10 +719,11 @@ function buildWithdrawalProviderDescription(withdrawalRow = {}) {
 function buildWithdrawalPixTransferPayload(context = {}) {
   const withdrawalRow = context?.withdrawalRow || {};
   const payoutMethodRow = context?.payoutMethodRow || {};
+  const provider = normalizePaymentProvider(context?.providerConfig?.provider);
   const amountCents =
     Number(withdrawalRow.net_amount_cents) || Number(withdrawalRow.requested_amount_cents) || 0;
 
-  return buildAbacatePixTransferPayload({
+  return buildProviderPixTransferPayload(provider, {
     amountCents,
     externalId: withdrawalRow.id,
     description: buildWithdrawalProviderDescription(withdrawalRow),
@@ -728,12 +735,13 @@ function buildWithdrawalPixTransferPayload(context = {}) {
 function buildWithdrawalProviderRequestAudit(payload = {}, context = {}) {
   const payoutMethodRow = context?.payoutMethodRow || {};
   const ownerProfileRow = context?.ownerProfileRow || {};
-  const pixKeyType = payload?.pix?.type || null;
-  const pixKeyValue = payload?.pix?.key || "";
+  const provider = normalizePaymentProvider(context?.providerConfig?.provider);
+  const pixKeyType = payload?.pix?.type || payload?.pixAddressKeyType || null;
+  const pixKeyValue = payload?.pix?.key || payload?.pixAddressKey || "";
 
   return {
-    provider: "abacatepay",
-    operation: "payout_create",
+    provider,
+    operation: provider === "asaas" ? "transfer_create" : "payout_create",
     attemptedAt: nowIso(),
     ownerId: context?.withdrawalRow?.owner_id || null,
     payoutMethodId: context?.withdrawalRow?.payout_method_id || null,
@@ -758,11 +766,12 @@ function buildWithdrawalProviderRequestAudit(payload = {}, context = {}) {
 }
 
 function buildWithdrawalProviderResponseAudit(payload = {}, extra = {}) {
+  const provider = normalizePaymentProvider(extra.provider || payload?.provider);
   return {
-    provider: "abacatepay",
-    operation: "payout_create",
+    provider,
+    operation: provider === "asaas" ? "transfer_create" : "payout_create",
     processedAt: nowIso(),
-    ...sanitizePixTransferResponse(payload),
+    ...sanitizeProviderPixTransferResponse(provider, payload),
     ...extra,
   };
 }
@@ -939,7 +948,10 @@ async function finalizeWithdrawalFromProviderState({
 async function lookupProviderWithdrawalByExternalId(withdrawalRow = {}, providerConfig = null) {
   const externalId = withdrawalRow?.id ? String(withdrawalRow.id) : "";
   if (!externalId) return null;
-  return getPixTransferByExternalId(externalId, { providerConfig });
+  return getProviderPixTransferByExternalId(externalId, {
+    providerConfig,
+    providerReferenceId: withdrawalRow?.provider_reference_id || null,
+  });
 }
 
 function shouldExecuteWithdrawalProviderCall(withdrawalRow = {}) {
@@ -983,10 +995,15 @@ async function syncWithdrawalWithProviderLookup(serviceClient, withdrawalRow, op
       boundWithdrawalRow,
       providerConfig
     );
+    const provider = normalizePaymentProvider(providerConfig?.provider);
     const providerResponse = buildWithdrawalProviderResponseAudit(providerLookupResult, {
+      provider,
       syncSource: options.syncSource || "provider_lookup",
     });
-    const resolution = mapAbacatepixTransferStatusToWithdrawalResolution(providerResponse.status);
+    const resolution = mapProviderPixTransferStatusToWithdrawalResolution(
+      provider,
+      providerResponse.status
+    );
 
     logWithdrawalEvent("provider_lookup_completed", {
       withdrawalId: boundWithdrawalRow.id,
@@ -1015,7 +1032,9 @@ async function syncWithdrawalWithProviderLookup(serviceClient, withdrawalRow, op
       providerResponse,
       resolution,
       failureReason:
-        resolution === "succeeded" ? null : "Falha ao enviar PIX via AbacatePay.",
+        resolution === "succeeded"
+          ? null
+          : `Falha ao enviar PIX via ${getPaymentProviderLabel(provider)}.`,
     });
   } catch (error) {
     if (error?.status === 404) {
@@ -1027,6 +1046,7 @@ async function syncWithdrawalWithProviderLookup(serviceClient, withdrawalRow, op
       withdrawalId: withdrawalRow.id,
       status: "processing",
       providerResponse: buildWithdrawalProviderResponseAudit(error?.providerData || {}, {
+        provider: withdrawalRow?.provider_config_snapshot?.provider || "abacatepay",
         errorMessage: error?.message || "provider_lookup_failed",
         httpStatus: error?.status || null,
         lookupOnly: true,
@@ -1059,6 +1079,10 @@ async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
     bindProviderConfigIfMissing: !!options.bindProviderConfigIfMissing,
   });
   if (!context?.withdrawalRow) return null;
+  const provider = normalizePaymentProvider(
+    context.providerConfig?.provider || context.withdrawalRow?.provider_config_snapshot?.provider
+  );
+  const providerLabel = getPaymentProviderLabel(provider);
 
   if (!shouldExecuteWithdrawalProviderCall(context.withdrawalRow) && !options.force) {
     return mapWithdrawalRow(context.withdrawalRow);
@@ -1067,8 +1091,9 @@ async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
   if (context.providerConfigError || !context.providerConfig?.apiKey) {
     const providerConfigReason =
       context.providerConfigError?.message ||
-      "Configuracao AbacatePay nao vinculada ao saque.";
+      "Configuracao de gateway nao vinculada ao saque.";
     return failWithdrawalWithoutProviderCall(serviceClient, withdrawalId, providerConfigReason, {
+      provider,
       validationReason: context.providerConfigError?.code || "provider_config_missing",
     });
   }
@@ -1077,7 +1102,8 @@ async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
     return failWithdrawalWithoutProviderCall(
       serviceClient,
       withdrawalId,
-      "Metodo PIX nao encontrado ou ainda nao validado."
+      "Metodo PIX nao encontrado ou ainda nao validado.",
+      { provider }
     );
   }
 
@@ -1091,6 +1117,7 @@ async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
       withdrawalId,
       "A chave PIX cadastrada para o saque e invalida.",
       {
+        provider,
         validationReason: pixKeyValidation.reason,
       }
     );
@@ -1100,21 +1127,25 @@ async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
     return failWithdrawalWithoutProviderCall(
       serviceClient,
       withdrawalId,
-      `A AbacatePay exige saques a partir de R$ ${centsToAmount(MIN_WITHDRAWAL_CENTS)
+      `O ${providerLabel} exige saques a partir de R$ ${centsToAmount(MIN_WITHDRAWAL_CENTS)
         .toFixed(2)
         .replace(".", ",")}.`,
       {
+        provider,
         validationReason: "minimum_withdrawal_amount",
       }
     );
   }
 
   const providerPayload = buildWithdrawalPixTransferPayload(context);
-  if (!providerPayload?.pix?.key) {
+  const hasProviderPixKey =
+    provider === "asaas" ? !!providerPayload?.pixAddressKey : !!providerPayload?.pix?.key;
+  if (!hasProviderPixKey) {
     return failWithdrawalWithoutProviderCall(
       serviceClient,
       withdrawalId,
-      "Nao foi possivel localizar a chave PIX cadastrada para o saque."
+      "Nao foi possivel localizar a chave PIX cadastrada para o saque.",
+      { provider }
     );
   }
 
@@ -1147,11 +1178,14 @@ async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
   });
 
   try {
-    const providerResult = await sendPixTransfer(providerPayload, {
+    const providerResult = await sendProviderPixTransfer(providerPayload, {
       providerConfig: context.providerConfig,
     });
-    const providerResponse = buildWithdrawalProviderResponseAudit(providerResult);
-    const resolution = mapAbacatepixTransferStatusToWithdrawalResolution(providerResponse.status);
+    const providerResponse = buildWithdrawalProviderResponseAudit(providerResult, { provider });
+    const resolution = mapProviderPixTransferStatusToWithdrawalResolution(
+      provider,
+      providerResponse.status
+    );
 
     logWithdrawalEvent("provider_send_completed", {
       withdrawalId,
@@ -1180,10 +1214,11 @@ async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
       withdrawalId,
       providerResponse,
       resolution,
-      failureReason: resolution === "succeeded" ? null : "Falha ao enviar PIX via AbacatePay.",
+      failureReason: resolution === "succeeded" ? null : `Falha ao enviar PIX via ${providerLabel}.`,
     });
   } catch (error) {
     const providerResponse = buildWithdrawalProviderResponseAudit(error?.providerData || {}, {
+      provider,
       errorMessage: error?.message || "pix_send_failed",
       httpStatus: error?.status || null,
       pendingReview: !error?.providerData,
@@ -1210,7 +1245,7 @@ async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
         providerResponse,
         resolution: "failed",
         failureReason:
-          "Saque nao enviado: a chave da AbacatePay nao esta configurada no backend.",
+          `Saque nao enviado: a chave do ${providerLabel} nao esta configurada no backend.`,
       });
     }
 
@@ -1228,13 +1263,14 @@ async function executeQueuedWithdrawalPixSend(withdrawalId, options = {}) {
 
     if (error?.providerData) {
       const resolution =
-        mapAbacatepixTransferStatusToWithdrawalResolution(providerResponse.status) || "failed";
+        mapProviderPixTransferStatusToWithdrawalResolution(provider, providerResponse.status) ||
+        "failed";
       return finalizeWithdrawalFromProviderState({
         serviceClient,
         withdrawalId,
         providerResponse,
         resolution,
-        failureReason: error?.message || "Falha ao enviar PIX via AbacatePay.",
+        failureReason: error?.message || `Falha ao enviar PIX via ${providerLabel}.`,
       });
     }
 
@@ -1305,28 +1341,25 @@ export async function processOwnerWithdrawalProviderWebhook({
   payload,
   eventType,
   eventRow = null,
+  provider = null,
 } = {}) {
-  const normalizedEventType =
-    String(eventType || normalizeAbacatepayEventType(payload) || "")
-      .trim()
-      .toLowerCase();
+  const providerName = normalizePaymentProvider(provider || eventRow?.provider || "abacatepay");
+  const normalizedEventType = normalizeProviderWithdrawalEventType(
+    providerName,
+    payload,
+    eventType
+  );
 
-  if (
-    normalizedEventType !== "transfer.completed" &&
-    normalizedEventType !== "transfer.failed" &&
-    normalizedEventType !== "payout.completed" &&
-    normalizedEventType !== "payout.done" &&
-    normalizedEventType !== "payout.failed" &&
-    normalizedEventType !== "withdraw.completed" &&
-    normalizedEventType !== "withdraw.done" &&
-    normalizedEventType !== "withdraw.failed"
-  ) {
+  if (!isProviderWithdrawalEvent(providerName, normalizedEventType)) {
     return { applied: false, reason: "unsupported_event" };
   }
 
   const serviceClient = getServiceRoleClient();
-  const externalId = extractAbacatepayExternalId(payload);
-  const providerReferenceId = sanitizePixTransferResponse(payload)?.id || null;
+  const externalId = extractProviderTransferExternalId(providerName, payload);
+  const providerReferenceId =
+    extractProviderTransferReferenceId(providerName, payload) ||
+    sanitizeProviderPixTransferResponse(providerName, payload)?.id ||
+    null;
   const withdrawalRow = await fetchWithdrawalRowForProviderWebhook(serviceClient, {
     externalId,
     providerReferenceId,
@@ -1365,20 +1398,24 @@ export async function processOwnerWithdrawalProviderWebhook({
   }
 
   const providerResponse = buildWithdrawalProviderResponseAudit(payload, {
+    provider: providerName,
     webhookEventType: normalizedEventType,
     webhookEventId: eventRow?.id || null,
   });
   const resolution =
     normalizedEventType.endsWith(".completed") || normalizedEventType.endsWith(".done")
       ? "succeeded"
-      : mapAbacatepixTransferStatusToWithdrawalResolution(providerResponse.status) || "failed";
+      : mapProviderPixTransferStatusToWithdrawalResolution(
+          providerName,
+          providerResponse.status
+        ) || "failed";
   const failureReason =
     resolution === "succeeded"
       ? null
       : payload?.reason ||
         payload?.error ||
         payload?.data?.reason ||
-        "Falha ao enviar PIX via AbacatePay.";
+        `Falha ao enviar PIX via ${getPaymentProviderLabel(providerName)}.`;
 
   logWithdrawalEvent("provider_webhook_received", {
     withdrawalId: withdrawalRow.id,
@@ -1473,15 +1510,15 @@ export async function requestOwnerWithdrawal({
   try {
     providerConfig = await getActivePayoutProviderConfigByOrganization(
       payoutMethod.organization_id,
-      "abacatepay"
+      null
     );
   } catch (error) {
     const status = error?.status === 404 ? 400 : error?.status || 500;
     throw Object.assign(
       new Error(
         error?.status === 404
-          ? "A organizacao do proprietario nao possui uma configuracao AbacatePay ativa."
-          : error?.message || "Nao foi possivel carregar a configuracao AbacatePay."
+          ? "A organizacao do proprietario nao possui uma configuracao de gateway ativa."
+          : error?.message || "Nao foi possivel carregar a configuracao do gateway."
       ),
       {
         status,

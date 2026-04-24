@@ -75,13 +75,13 @@ async function ensureTenantSchemaReady(payload) {
   }
 }
 
-async function resolveTenantOrganizationId(payload) {
+async function resolveTenantOrganizationId(payload, auth = {}) {
   const columnSupport = await detectTenantsHasOrganizationId();
   if (!columnSupport.hasOrganizationId) return null;
 
   const organizationId = await resolveOrganizationIdForTenant(undefined, {
     propertyId: payload.propertyId,
-    organizationId: payload.organizationId,
+    organizationId: payload.organizationId || auth.organizationId,
   });
 
   if (!organizationId) {
@@ -94,12 +94,13 @@ async function resolveTenantOrganizationId(payload) {
   return organizationId;
 }
 
-async function assertTenantEmailIsUnique(email, currentTenantId = null) {
+async function assertTenantEmailIsUnique(email, currentTenantId = null, organizationId = null) {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!normalizedEmail) return;
 
   const existingTenant = await findTenantByEmail(normalizedEmail, {
     excludeTenantId: currentTenantId,
+    organizationId,
   });
 
   if (existingTenant) {
@@ -213,23 +214,23 @@ async function ensureFinancialPaymentsForTenant(tenantId, organizationId = null)
   return tenant;
 }
 
-export async function listTenantItems(filters) {
+export async function listTenantItems(filters, auth = {}) {
   if (filters?.financialOnly) {
     return listFinancialTenants(filters);
   }
-  return listTenants(filters);
+  return listTenants({ ...filters, organizationId: auth.organizationId || null });
 }
 
-export async function getTenantItem(id) {
-  return findTenantById(id);
+export async function getTenantItem(id, auth = {}) {
+  return findTenantById(id, { organizationId: auth.organizationId || null });
 }
 
-export async function createTenantItem(payload) {
+export async function createTenantItem(payload, auth = {}) {
   await ensureTenantSchemaReady(payload);
-  await assertTenantEmailIsUnique(payload.email);
+  await assertTenantEmailIsUnique(payload.email, null, auth.organizationId || null);
 
   const id = payload.id || generateId();
-  const organizationId = await resolveTenantOrganizationId(payload);
+  const organizationId = await resolveTenantOrganizationId(payload, auth);
 
   await insertTenantRecord({ ...payload, id }, organizationId);
   await syncTenantAssociations({
@@ -239,7 +240,7 @@ export async function createTenantItem(payload) {
   });
   await ensureFinancialPaymentsForTenant(id, organizationId);
 
-  const tenant = await findTenantById(id);
+  const tenant = await findTenantById(id, { organizationId: auth.organizationId || organizationId || null });
   createNotification({
     type: "tenant_created",
     title: "Novo inquilino cadastrado",
@@ -254,17 +255,18 @@ export async function createTenantItem(payload) {
   return tenant;
 }
 
-export async function updateTenantItem(id, payload) {
+export async function updateTenantItem(id, payload, auth = {}) {
   await ensureTenantSchemaReady(payload);
 
-  const existingTenant = await findTenantById(id);
+  const organizationIdFilter = auth.organizationId || null;
+  const existingTenant = await findTenantById(id, { organizationId: organizationIdFilter });
   if (!existingTenant) {
     throw buildValidationError("Inquilino nao encontrado.", 404);
   }
 
-  await assertTenantEmailIsUnique(payload.email, id);
+  await assertTenantEmailIsUnique(payload.email, id, organizationIdFilter);
 
-  const organizationId = await resolveTenantOrganizationId(payload);
+  const organizationId = await resolveTenantOrganizationId(payload, auth);
   await updateTenantRecord(id, payload, organizationId);
 
   if (existingTenant.rentValue !== payload.rentValue) {
@@ -282,11 +284,12 @@ export async function updateTenantItem(id, payload) {
   });
   await ensureFinancialPaymentsForTenant(id, organizationId);
 
-  return findTenantById(id);
+  return findTenantById(id, { organizationId: organizationIdFilter || organizationId || null });
 }
 
-export async function deleteTenantItem(id) {
-  const existingTenant = await findTenantById(id);
+export async function deleteTenantItem(id, auth = {}) {
+  const organizationIdFilter = auth.organizationId || null;
+  const existingTenant = await findTenantById(id, { organizationId: organizationIdFilter });
   if (!existingTenant) {
     throw buildValidationError("Inquilino nao encontrado.", 404);
   }
@@ -297,7 +300,7 @@ export async function deleteTenantItem(id) {
     nextTenant: null,
   });
 
-  const affectedRows = await deleteTenantRecord(id);
+  const affectedRows = await deleteTenantRecord(id, { organizationId: organizationIdFilter });
   if (!affectedRows) {
     throw buildValidationError("Inquilino nao encontrado.", 404);
   }

@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:financial": "node tests/payment-responsibility.core.test.cjs && node tests/payment-automation.core.test.cjs && node tests/owner-wallet.utils.test.cjs && node tests/owner-wallet.request.test.cjs && node tests/abacatepay.service.test.cjs && node tests/owner-wallet.rules.test.cjs"
+    "test:financial": "node tests/payment-responsibility.core.test.cjs && node tests/payment-automation.core.test.cjs && node tests/owner-wallet.utils.test.cjs && node tests/owner-wallet.request.test.cjs && node tests/abacatepay.service.test.cjs && node tests/asaas.service.test.cjs && node tests/owner-wallet.rules.test.cjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.0.5",

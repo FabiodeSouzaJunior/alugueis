@@ -1,7 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 
 import { handleCreateTenant, handleListTenants } from "@/server/modules/tenants";
-import { withAuth } from "@/lib/auth";
+import { withAuthContext } from "@/lib/auth";
 
 async function _GET(request, context) {
   const response = await handleListTenants(request);
@@ -13,5 +13,5 @@ async function _POST(request, context) {
   return NextResponse.json(response.body, { status: response.status });
 }
 
-export const GET = withAuth(_GET);
-export const POST = withAuth(_POST);
+export const GET = withAuthContext(_GET);
+export const POST = withAuthContext(_POST);

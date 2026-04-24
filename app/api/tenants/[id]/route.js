@@ -5,7 +5,7 @@ import {
   handleGetTenant,
   handleUpdateTenant,
 } from "@/server/modules/tenants";
-import { withAuth } from "@/lib/auth";
+import { withAuthContext } from "@/lib/auth";
 
 async function resolveTenantId(params) {
   const resolvedParams = typeof params?.then === "function" ? await params : params;
@@ -27,6 +27,6 @@ async function _DELETE(request, { params }) {
   return NextResponse.json(response.body, { status: response.status });
 }
 
-export const GET = withAuth(_GET);
-export const PUT = withAuth(_PUT);
-export const DELETE = withAuth(_DELETE);
+export const GET = withAuthContext(_GET);
+export const PUT = withAuthContext(_PUT);
+export const DELETE = withAuthContext(_DELETE);

@@ -32,7 +32,7 @@ async function readJson(request) {
 export async function handleListTenants(request) {
   try {
     const filters = createTenantListDto(new URL(request.url).searchParams);
-    const items = await listTenantItems(filters);
+    const items = await listTenantItems(filters, request.auth || {});
     return buildResponse(200, items);
   } catch (error) {
     return mapError(error, "Erro ao carregar inquilinos.");
@@ -42,7 +42,7 @@ export async function handleListTenants(request) {
 export async function handleGetTenant(_request, tenantId) {
   try {
     const id = createTenantIdDto(tenantId);
-    const tenant = await getTenantItem(id);
+    const tenant = await getTenantItem(id, _request.auth || {});
 
     if (!tenant) {
       return buildResponse(404, { error: "Inquilino nao encontrado." });
@@ -61,7 +61,7 @@ export async function handleCreateTenant(request) {
     const createdTenant = await createTenantItem({
       ...dto,
       id: payload?.id,
-    });
+    }, request.auth || {});
     return buildResponse(200, createdTenant);
   } catch (error) {
     return mapError(error, "Erro ao criar inquilino.");
@@ -73,7 +73,7 @@ export async function handleUpdateTenant(request, tenantId) {
     const id = createTenantIdDto(tenantId);
     const payload = await readJson(request);
     const dto = createTenantWriteDto(payload);
-    const updatedTenant = await updateTenantItem(id, dto);
+    const updatedTenant = await updateTenantItem(id, dto, request.auth || {});
     return buildResponse(200, updatedTenant);
   } catch (error) {
     return mapError(error, "Erro ao atualizar inquilino.");
@@ -83,7 +83,7 @@ export async function handleUpdateTenant(request, tenantId) {
 export async function handleDeleteTenant(_request, tenantId) {
   try {
     const id = createTenantIdDto(tenantId);
-    const result = await deleteTenantItem(id);
+    const result = await deleteTenantItem(id, _request.auth || {});
     return buildResponse(200, result);
   } catch (error) {
     return mapError(error, "Erro ao excluir inquilino.");

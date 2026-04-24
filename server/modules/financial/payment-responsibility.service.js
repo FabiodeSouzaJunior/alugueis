@@ -17,6 +17,7 @@ const {
 } = paymentResponsibilityCore;
 
 const FINANCIAL_RESPONSIBILITY_CACHE_MS = 10 * 1000;
+const PORTAL_PAYMENT_PROVIDERS = ["abacatepay", "asaas"];
 
 let financialResponsibilityIndexCache = null;
 let financialResponsibilityIndexCheckedAt = 0;
@@ -177,7 +178,7 @@ async function applyPortalPaidCheckoutTotals(payments = [], supabase = getSupaba
   const { data, error } = await supabase
     .from("payment_gateway_checkouts")
     .select("payment_id, amount_base, amount_total")
-    .eq("provider", "abacatepay")
+    .in("provider", PORTAL_PAYMENT_PROVIDERS)
     .eq("status", "paid")
     .in("payment_id", paymentIds);
 

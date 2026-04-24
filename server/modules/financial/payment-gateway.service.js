@@ -1,10 +1,22 @@
 import { getServiceRoleClient, getSupabaseClient } from "@/database/supabaseClient";
 import {
-  createTransparentPixCharge,
-  getAbacatepayResponseApiVersion,
-  sanitizeCheckoutPayload,
   validateAbacatepayWebhookRequest,
 } from "@/server/modules/financial/abacatepay.service";
+import {
+  buildAsaasNormalizedWebhookEventKey,
+  buildAsaasWalletPaymentPayload,
+  extractAsaasExternalReference,
+  extractAsaasPaymentId,
+  extractAsaasPaymentResource,
+  extractAsaasTransferResource,
+  normalizeAsaasInternalEventType,
+  validateAsaasWebhookRequest,
+} from "@/server/modules/financial/asaas.service";
+import {
+  createProviderPixCharge,
+  getProviderResponseApiVersion,
+  sanitizeProviderCheckoutPayload,
+} from "@/server/modules/financial/payment-provider-gateway.service";
 import {
   buildNormalizedWebhookEventKey,
   computeFundsAvailableAt,
@@ -24,7 +36,7 @@ import {
 } from "@/server/modules/financial/owner-wallet.utils";
 import {
   buildPaymentProviderConfigSnapshot,
-  getActivePaymentProviderConfigByOrganization,
+  getActiveGatewayProviderConfigByOrganization,
   getPaymentProviderConfigById,
 } from "@/features/pagamentos/provider-configs";
 import {
@@ -158,16 +170,20 @@ async function readAccessiblePayment(paymentId) {
   };
 }
 
-async function readCheckoutByRequestHash(serviceClient, requestHash) {
-  const { data, error } = await serviceClient
+async function readCheckoutByRequestHash(serviceClient, requestHash, provider = "abacatepay") {
+  let query = serviceClient
     .from("payment_gateway_checkouts")
     .select("*")
-    .eq("provider", "abacatepay")
     .eq("request_hash", requestHash)
     .in("status", ["creating", "ready"])
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+
+  if (provider) {
+    query = query.eq("provider", provider);
+  }
+
+  const { data, error } = await query.maybeSingle();
 
   if (error) throw error;
   return data || null;
@@ -256,10 +272,8 @@ export async function createPaymentTransparentCheckout({
   }
 
   const organizationId = paymentRow.organization_id || tenantRow?.organization_id || null;
-  const providerConfig = await getActivePaymentProviderConfigByOrganization(
-    organizationId,
-    "abacatepay"
-  );
+  const providerConfig = await getActiveGatewayProviderConfigByOrganization(organizationId);
+  const provider = providerConfig.provider || "abacatepay";
 
   const requestHash = createRequestHash([
     paymentRow.id,
@@ -269,13 +283,14 @@ export async function createPaymentTransparentCheckout({
     paymentRow.month,
     paymentRow.year,
     "transparent_auto",
+    provider,
     providerConfig.id,
     providerConfig.providerAccountId,
     providerConfig.environment,
   ]);
 
   const serviceClient = getServiceRoleClient();
-  const reusable = await readCheckoutByRequestHash(serviceClient, requestHash);
+  const reusable = await readCheckoutByRequestHash(serviceClient, requestHash, provider);
   if (reusable) {
     const reusableUntil = reusable.reusable_until ? new Date(reusable.reusable_until) : null;
     if (!reusableUntil || reusableUntil.getTime() > Date.now()) {
@@ -284,7 +299,7 @@ export async function createPaymentTransparentCheckout({
   }
 
   const creatingRecord = {
-    provider: "abacatepay",
+    provider,
     payment_id: paymentRow.id,
     tenant_id: paymentRow.tenant_id,
     organization_id: organizationId,
@@ -304,6 +319,7 @@ export async function createPaymentTransparentCheckout({
     request_payload: {
       version: "auto",
       type: "transparent",
+      provider,
       paymentId: paymentRow.id,
       tenantId: paymentRow.tenant_id,
       providerConfigId: providerConfig.id,
@@ -316,6 +332,7 @@ export async function createPaymentTransparentCheckout({
       paymentId: paymentRow.id,
       tenantId: paymentRow.tenant_id,
       organizationId,
+      provider,
       providerConfigId: providerConfig.id,
       providerAccountId: providerConfig.providerAccountId,
       providerEnvironment: providerConfig.environment,
@@ -329,30 +346,32 @@ export async function createPaymentTransparentCheckout({
     checkoutRow = await insertCreatingCheckoutRecord(serviceClient, creatingRecord);
   } catch (error) {
     if (!isDuplicateKeyError(error)) throw error;
-    const duplicatedRow = await readCheckoutByRequestHash(serviceClient, requestHash);
+    const duplicatedRow = await readCheckoutByRequestHash(serviceClient, requestHash, provider);
     if (duplicatedRow) return mapCheckoutRow(duplicatedRow);
     throw error;
   }
 
   try {
-    const externalResponse = await createTransparentPixCharge({
+    const externalResponse = await createProviderPixCharge({
+      providerConfig,
       amountCents: openAmountCents,
       description: buildCheckoutDescription(paymentRow, tenantRow),
       expiresInSeconds: 1800,
       customer: buildCheckoutCustomer(tenantRow),
-      providerConfig,
+      dueDate: paymentRow.due_date,
       metadata: {
         paymentId: paymentRow.id,
         tenantId: paymentRow.tenant_id,
         organizationId,
+        provider,
         providerConfigId: providerConfig.id,
         providerAccountId: providerConfig.providerAccountId,
         providerEnvironment: providerConfig.environment,
       },
     });
 
-    const providerPayload = sanitizeCheckoutPayload(externalResponse);
-    const providerApiVersion = getAbacatepayResponseApiVersion(externalResponse) || 2;
+    const providerPayload = sanitizeProviderCheckoutPayload(provider, externalResponse);
+    const providerApiVersion = getProviderResponseApiVersion(provider, externalResponse);
     const updatedRow = await updateCheckoutRecord(serviceClient, checkoutRow.id, {
       status: "ready",
       provider_status: providerPayload.status || "PENDING",
@@ -1025,10 +1044,10 @@ function buildWebhookProviderConfigFields(providerConfig = null) {
   };
 }
 
-async function loadWebhookProviderConfig(configId) {
+async function loadWebhookProviderConfig(configId, provider = "abacatepay") {
   const normalizedConfigId = normalizeProviderConfigId(configId);
   if (!normalizedConfigId) return null;
-  return getPaymentProviderConfigById(normalizedConfigId, "abacatepay");
+  return getPaymentProviderConfigById(normalizedConfigId, provider);
 }
 
 async function resolveWebhookProviderConfig({
@@ -1139,6 +1158,349 @@ function validateWebhookWithProviderConfig({
   });
 }
 
+function normalizeAsaasProviderConfigIdFromInput({ payload = {}, headers = {}, queryParams = {} } = {}) {
+  const normalizedHeaders = normalizeHeaders(headers);
+  return normalizeProviderConfigId(
+    queryParams.providerConfigId ||
+      queryParams.provider_config_id ||
+      normalizedHeaders["x-provider-config-id"] ||
+      normalizedHeaders["x-asaas-provider-config-id"] ||
+      payload?.providerConfigId ||
+      payload?.provider_config_id
+  );
+}
+
+async function resolveAsaasWebhookProviderConfig({
+  payload = {},
+  headers = {},
+  queryParams = {},
+  checkoutRow = null,
+  withdrawalRow = null,
+} = {}) {
+  const inputProviderConfigId = normalizeAsaasProviderConfigIdFromInput({
+    payload,
+    headers,
+    queryParams,
+  });
+  const recordProviderConfigId =
+    withdrawalRow?.provider_config_id || checkoutRow?.provider_config_id || null;
+  const providerConfigId = recordProviderConfigId || inputProviderConfigId;
+
+  if (!providerConfigId) {
+    throw Object.assign(new Error("Webhook ASAAS sem configuracao vinculada."), {
+      status: 401,
+      code: "provider_config_missing_on_asaas_webhook",
+    });
+  }
+
+  if (
+    recordProviderConfigId &&
+    inputProviderConfigId &&
+    String(recordProviderConfigId) !== String(inputProviderConfigId)
+  ) {
+    throw Object.assign(new Error("Webhook ASAAS recebido com providerConfigId divergente."), {
+      status: 401,
+      code: "provider_config_mismatch",
+    });
+  }
+
+  const providerConfig = await loadWebhookProviderConfig(providerConfigId, "asaas");
+  const organizationId =
+    withdrawalRow?.organization_id || checkoutRow?.organization_id || providerConfig?.organizationId || null;
+  if (
+    organizationId &&
+    providerConfig?.organizationId &&
+    String(organizationId) !== String(providerConfig.organizationId)
+  ) {
+    throw Object.assign(new Error("Webhook ASAAS recebido para configuracao de outra organizacao."), {
+      status: 401,
+      code: "provider_config_organization_mismatch",
+    });
+  }
+
+  return providerConfig;
+}
+
+function buildAsaasValidationResult({ headers = {}, providedToken = "", providerConfig = null } = {}) {
+  return validateAsaasWebhookRequest({
+    headers,
+    providedToken,
+    expectedToken: providerConfig?.webhookSecret || "",
+  });
+}
+
+const ASAAS_SUCCESS_EVENT_TYPES = new Set(["payment.received", "payment.confirmed"]);
+const ASAAS_REVERSAL_EVENT_TYPES = new Set(["payment.refunded"]);
+const ASAAS_WITHDRAWAL_EVENT_TYPES = new Set([
+  "transfer.done",
+  "transfer.failed",
+  "transfer.cancelled",
+  "transfer.canceled",
+]);
+
+function buildAsaasWebhookProviderConfigFields(providerConfig = null) {
+  return {
+    provider_config_id: providerConfig?.id || null,
+    provider_account_id: providerConfig?.providerAccountId || null,
+    provider_environment: providerConfig?.environment || null,
+  };
+}
+
+async function findAsaasWithdrawalRowForWebhook(serviceClient, payload = {}) {
+  const transfer = extractAsaasTransferResource(payload);
+  const providerReferenceId =
+    transfer?.id == null || String(transfer.id).trim() === "" ? null : String(transfer.id).trim();
+  const externalReference = extractAsaasExternalReference(payload);
+
+  if (providerReferenceId) {
+    const byProviderReference = await serviceClient
+      .from("withdrawal_requests")
+      .select(
+        "id, organization_id, owner_id, provider_config_id, provider_account_id, provider_environment"
+      )
+      .eq("provider_reference_id", providerReferenceId)
+      .maybeSingle();
+    if (byProviderReference.error) throw byProviderReference.error;
+    if (byProviderReference.data) return byProviderReference.data;
+  }
+
+  if (externalReference) {
+    let byExternalReference = { data: null, error: null };
+    try {
+      byExternalReference = await serviceClient
+        .from("withdrawal_requests")
+        .select(
+          "id, organization_id, owner_id, provider_config_id, provider_account_id, provider_environment"
+        )
+        .eq("id", externalReference)
+        .maybeSingle();
+    } catch (error) {
+      if (error?.code !== "22P02") throw error;
+    }
+    if (byExternalReference.error) throw byExternalReference.error;
+    if (byExternalReference.data) return byExternalReference.data;
+  }
+
+  return null;
+}
+
+export async function processAsaasWebhook({
+  payload,
+  rawBody,
+  headers,
+  queryParams,
+  providedToken = "",
+} = {}) {
+  const serviceClient = getServiceRoleClient();
+  const eventType = normalizeAsaasInternalEventType(payload);
+  const providerEventId = payload?.id || null;
+  const providerCheckoutId = extractAsaasPaymentId(payload);
+  const paymentId = extractAsaasExternalReference(payload);
+
+  let checkoutRow = null;
+  if (providerCheckoutId) {
+    const checkoutLookup = await serviceClient
+      .from("payment_gateway_checkouts")
+      .select("*")
+      .eq("provider", "asaas")
+      .eq("provider_checkout_id", providerCheckoutId)
+      .maybeSingle();
+    if (!checkoutLookup.error) checkoutRow = checkoutLookup.data || null;
+  }
+
+  const isWithdrawalTransferEvent = ASAAS_WITHDRAWAL_EVENT_TYPES.has(eventType);
+  const withdrawalRow = isWithdrawalTransferEvent
+    ? await findAsaasWithdrawalRowForWebhook(serviceClient, payload)
+    : null;
+
+  let paymentIdToUse = isWithdrawalTransferEvent ? null : paymentId || checkoutRow?.payment_id || null;
+  let tenantIdToUse = checkoutRow?.tenant_id || null;
+  let organizationIdToUse =
+    checkoutRow?.organization_id || withdrawalRow?.organization_id || null;
+
+  if (paymentIdToUse) {
+    const paymentLookup = await serviceClient
+      .from("payments")
+      .select("id, tenant_id, organization_id")
+      .eq("id", paymentIdToUse)
+      .maybeSingle();
+    if (!paymentLookup.error && paymentLookup.data) {
+      tenantIdToUse = tenantIdToUse || paymentLookup.data.tenant_id;
+      organizationIdToUse = organizationIdToUse || paymentLookup.data.organization_id;
+    }
+  }
+
+  const providerConfig = await resolveAsaasWebhookProviderConfig({
+    payload,
+    headers,
+    queryParams,
+    checkoutRow,
+    withdrawalRow,
+  });
+  const validation = buildAsaasValidationResult({
+    headers,
+    providedToken,
+    providerConfig,
+  });
+  const providerConfigFields = buildAsaasWebhookProviderConfigFields(providerConfig);
+  const normalizedEventKeyBase =
+    buildAsaasNormalizedWebhookEventKey(payload) ||
+    createRequestHash(["asaas-webhook", rawBody || JSON.stringify(payload || {})]);
+  const normalizedEventKey = providerConfigFields.provider_config_id
+    ? `${providerConfigFields.provider_config_id}:${normalizedEventKeyBase}`
+    : normalizedEventKeyBase;
+
+  const { eventRow, duplicate } = await insertWebhookEvent(serviceClient, {
+    provider: "asaas",
+    event_type: eventType || null,
+    provider_event_id: providerEventId,
+    provider_checkout_id: providerCheckoutId,
+    ...providerConfigFields,
+    payment_gateway_checkout_id: checkoutRow?.id || null,
+    payment_id: paymentIdToUse,
+    tenant_id: tenantIdToUse,
+    organization_id: organizationIdToUse,
+    processing_status: "received",
+    payload,
+    raw_payload: rawBody,
+    query_params: queryParams || {},
+    headers: headers || {},
+    webhook_secret_valid: !!validation?.tokenValid,
+    signature_valid: false,
+    signature_algorithm: "asaas-access-token",
+    api_version: 3,
+    normalized_event_key: normalizedEventKey,
+    processed_result: {},
+    received_at: nowIso(),
+  });
+
+  if (duplicate) {
+    return {
+      ok: true,
+      duplicate: true,
+      eventId: eventRow?.id || null,
+      validation,
+    };
+  }
+
+  if (!validation?.allowed) {
+    await upsertProcessedWebhook(serviceClient, eventRow.id, {
+      processing_status: "failed",
+      error_message: "invalid_asaas_webhook_auth",
+      processed_result: {
+        tokenConfigured: !!validation?.tokenConfigured,
+        tokenProvided: !!validation?.tokenProvided,
+        tokenValid: !!validation?.tokenValid,
+        providerConfigId: providerConfigFields.provider_config_id,
+      },
+    });
+    return { ok: false, status: 401, eventId: eventRow.id, validation };
+  }
+
+  const resource = extractAsaasPaymentResource(payload);
+  if (checkoutRow) {
+    await updateCheckoutRecord(serviceClient, checkoutRow.id, {
+      provider_status: resource?.status || checkoutRow.provider_status,
+      status: ASAAS_SUCCESS_EVENT_TYPES.has(eventType)
+        ? "paid"
+        : ASAAS_REVERSAL_EVENT_TYPES.has(eventType)
+          ? "refunded"
+          : checkoutRow.status,
+      response_payload: {
+        ...(checkoutRow.response_payload || {}),
+        webhook: resource || {},
+      },
+      paid_at: ASAAS_SUCCESS_EVENT_TYPES.has(eventType)
+        ? resource?.paymentDate || resource?.clientPaymentDate || nowIso()
+        : checkoutRow.paid_at,
+      metadata: {
+        ...(checkoutRow.metadata || {}),
+        receiptUrl:
+          resource?.transactionReceiptUrl ||
+          resource?.invoiceUrl ||
+          checkoutRow.metadata?.receiptUrl ||
+          null,
+      },
+    });
+  }
+
+  let processedResult = {
+    eventType,
+    paymentId: paymentIdToUse,
+    providerConfigId: providerConfigFields.provider_config_id,
+    providerAccountId: providerConfigFields.provider_account_id,
+    providerEnvironment: providerConfigFields.provider_environment,
+    duplicate: false,
+  };
+
+  try {
+    if (ASAAS_SUCCESS_EVENT_TYPES.has(eventType)) {
+      if (!paymentIdToUse || !tenantIdToUse) {
+        processedResult = { ...processedResult, ignored: "missing_payment_context" };
+      } else {
+        const paymentContext = await resolvePaymentOwnerContext(
+          serviceClient,
+          paymentIdToUse,
+          tenantIdToUse
+        );
+        const creditResult = await applySuccessfulWalletCredit({
+          serviceClient,
+          eventRow,
+          paymentContext,
+          checkoutRow,
+          payload: buildAsaasWalletPaymentPayload(payload),
+        });
+        processedResult = { ...processedResult, creditResult };
+      }
+    } else if (ASAAS_REVERSAL_EVENT_TYPES.has(eventType)) {
+      if (!paymentIdToUse) {
+        processedResult = { ...processedResult, ignored: "missing_payment_context" };
+      } else {
+        const reversalResult = await applyReversalOrHold({
+          serviceClient,
+          eventRow,
+          paymentId: paymentIdToUse,
+          checkoutRow,
+          payload: buildAsaasWalletPaymentPayload(payload),
+          eventType,
+        });
+        processedResult = { ...processedResult, reversalResult };
+      }
+    } else if (isWithdrawalTransferEvent) {
+      const withdrawalResult = await processOwnerWithdrawalProviderWebhook({
+        payload,
+        eventType,
+        eventRow,
+        provider: "asaas",
+      });
+      processedResult = { ...processedResult, withdrawalResult };
+    } else {
+      processedResult = {
+        ...processedResult,
+        ignored: "unsupported_event",
+      };
+    }
+
+    await upsertProcessedWebhook(serviceClient, eventRow.id, {
+      processing_status: "processed",
+      error_message: null,
+      processed_result: processedResult,
+    });
+
+    return { ok: true, eventId: eventRow.id, processedResult, validation };
+  } catch (error) {
+    await upsertProcessedWebhook(serviceClient, eventRow.id, {
+      processing_status: "failed",
+      error_message: error.message || "asaas_webhook_processing_failed",
+      processed_result: {
+        ...processedResult,
+        failed: true,
+      },
+    });
+    throw error;
+  }
+}
+
 export async function processAbacatepayWebhook({
   payload,
   rawBody,
@@ -1170,6 +1532,7 @@ export async function processAbacatepayWebhook({
     const checkoutLookup = await serviceClient
       .from("payment_gateway_checkouts")
       .select("*")
+      .eq("provider", "abacatepay")
       .eq("provider_checkout_id", providerCheckoutId)
       .maybeSingle();
     if (!checkoutLookup.error) checkoutRow = checkoutLookup.data || null;
